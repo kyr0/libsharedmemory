@@ -75,9 +75,9 @@ private:
 
 #include <io.h>  // CreateFileMappingA, OpenFileMappingA, etc.
 
-Memory::Memory(std::string path, size_t size, bool persist) : _path(path), _size(size), _persist(persist) {};
+Memory::Memory(const std::string path, const size_t size, const bool persist) : _path(path), _size(size), _persist(persist) {};
 
-Error Memory::createOrOpen(bool create) {
+Error Memory::createOrOpen(const bool create) {
     if (create) {
         DWORD size_high_order = 0;
         DWORD size_low_order = static_cast<DWORD>(size_);
@@ -103,7 +103,7 @@ Error Memory::createOrOpen(bool create) {
         }
     }
 
-    DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
+    const DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
     _data = static_cast<uint8_t *>(MapViewOfFile(_handle, access, 0, 0, _size));
 
     if (!_data) {
@@ -140,16 +140,16 @@ Memory::~Memory() {
 
 #include <stdexcept>
 
-inline Memory::Memory(std::string path, size_t size, bool persist) : _size(size), _persist(persist) {
+inline Memory::Memory(const std::string path, const size_t size, const bool persist) : _size(size), _persist(persist) {
     _path = "/" + path;
 };
 
-inline Error Memory::createOrOpen(bool create) {
+inline Error Memory::createOrOpen(const bool create) {
     if (create) {
         // shm segments persist across runs, and macOS will refuse
         // to ftruncate an existing shm segment, so to be on the safe
         // side, we unlink it beforehand.
-        int ret = shm_unlink(_path.c_str());
+        const int ret = shm_unlink(_path.c_str());
         if (ret < 0) {
             if (errno != ENOENT) {
                 return kErrorCreationFailed;
@@ -157,7 +157,7 @@ inline Error Memory::createOrOpen(bool create) {
         }
     }
 
-    int flags = create ? (O_CREAT | O_RDWR) : O_RDONLY;
+    const int flags = create ? (O_CREAT | O_RDWR) : O_RDONLY;
 
     _fd = shm_open(_path.c_str(), flags, 0755);
     if (_fd < 0) {
@@ -177,7 +177,7 @@ inline Error Memory::createOrOpen(bool create) {
         }
     }
 
-    int prot = create ? (PROT_READ | PROT_WRITE) : PROT_READ;
+    const int prot = create ? (PROT_READ | PROT_WRITE) : PROT_READ;
 
     void *memory = mmap(nullptr,    // addr
                         _size,      // length
@@ -216,7 +216,7 @@ inline Memory::~Memory() {
 class SharedMemoryReadStream {
 public:
 
-    explicit SharedMemoryReadStream(std::string name, uint32_t bufferSize, bool isPersistent): 
+    explicit SharedMemoryReadStream(const std::string name, const uint32_t bufferSize, const bool isPersistent): 
         _memory(name, bufferSize, isPersistent)/*, _isInOddWriteMode(false)*/ {
 
         if (_memory.open() != kOK) {
@@ -231,7 +231,7 @@ public:
         std::memcpy(&size, &memory[1], 4 /*uint32 takes 4 byte*/);
 
         // 3) deserialize the buffer vector data
-        std::string data(reinterpret_cast<const char*>(&memory[5]), size);
+        const std::string data(reinterpret_cast<const char*>(&memory[5]), size);
         return data;
     }
 
@@ -243,7 +243,7 @@ private:
 class SharedMemoryWriteStream {
 public:
 
-    explicit SharedMemoryWriteStream(std::string name, uint32_t bufferSize, bool isPersistent): 
+    explicit SharedMemoryWriteStream(const std::string name, const uint32_t bufferSize, const bool isPersistent): 
         _memory(name, bufferSize, isPersistent), _isInOddWriteMode(false) {
 
         if (_memory.create() != kOK) {
@@ -252,7 +252,7 @@ public:
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    inline uint32_t getWriteFlags(uint8_t type) {
+    inline uint32_t getWriteFlags(const uint8_t type) {
         // flip state
         _isInOddWriteMode = !_isInOddWriteMode;
         unsigned char flags = type;
@@ -267,7 +267,7 @@ public:
         return flags;
     }
 
-    inline void write(std::string dataString) {
+    inline void write(const std::string dataString) {
         unsigned char* memory = _memory.data();
 
         // 1) copy change flag into buffer for change detection
@@ -275,7 +275,7 @@ public:
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = dataString.data();
-        uint32_t bufferSize = dataString.size();
+        const uint32_t bufferSize = dataString.size();
         std::memcpy(&memory[1], &bufferSize, 4 /* uint32_t always takes 4 bytes */);
 
         // 3) copy stringData into memory buffer
