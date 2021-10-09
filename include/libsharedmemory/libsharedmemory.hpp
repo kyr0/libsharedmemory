@@ -213,7 +213,7 @@ inline Memory::~Memory() {
 class SharedMemoryReadStream {
 public:
 
-    explicit SharedMemoryReadStream(const std::string name, const uint32_t bufferSize, const bool isPersistent): 
+    explicit SharedMemoryReadStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
         _memory(name, bufferSize, isPersistent)/*, _isInOddWriteMode(false)*/ {
 
         if (_memory.open() != kOK) {
@@ -240,7 +240,7 @@ private:
 class SharedMemoryWriteStream {
 public:
 
-    explicit SharedMemoryWriteStream(const std::string name, const uint32_t bufferSize, const bool isPersistent): 
+    explicit SharedMemoryWriteStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
         _memory(name, bufferSize, isPersistent), _isInOddWriteMode(false) {
 
         if (_memory.create() != kOK) {
@@ -272,7 +272,7 @@ public:
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = dataString.data();
-        const uint32_t bufferSize = dataString.size();
+        const std::size_t bufferSize = dataString.size();
         std::memcpy(&memory[1], &bufferSize, 4 /* uint32_t always takes 4 bytes */);
 
         // 3) copy stringData into memory buffer
