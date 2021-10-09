@@ -224,7 +224,7 @@ public:
     inline std::string read() {
         unsigned char* memory = _memory.data();
 
-        uint32_t size;
+        std::size_t size;
         std::memcpy(&size, &memory[1], 4 /*uint32 takes 4 byte*/);
 
         // 3) deserialize the buffer vector data
