@@ -5,7 +5,6 @@
 #define KYR0_LIBSHAREDMEMORY_VERSION_MAJOR 1
 #define KYR0_LIBSHAREDMEMORY_VERSION_MINOR 0
 #define KYR0_LIBSHAREDMEMORY_VERSION_PATCH 0
-#endif
 
 #include <cstdint>
 #include <cstring>
@@ -30,8 +29,6 @@ enum Error {
 enum DataType {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
-  kMemoryFloat32Vector = 4,
-  kMemoryUInt8Vector = 8,
 };
 
 class Memory {
@@ -50,7 +47,7 @@ public:
 
     inline const std::string &path() { return _path; }
 
-    inline uint8_t *data() { return _data; }
+    inline unsigned char *data() { return _data; }
 
     void destroy();
 
@@ -60,7 +57,7 @@ private:
     Error createOrOpen(bool create);
 
     std::string _path;
-    uint8_t *_data = nullptr;
+    unsigned char *_data = nullptr;
     size_t _size = 0;
     bool _persist = true;
 #if defined(_WIN32)
@@ -104,7 +101,7 @@ Error Memory::createOrOpen(const bool create) {
     }
 
     const DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
-    _data = static_cast<uint8_t *>(MapViewOfFile(_handle, access, 0, 0, _size));
+    _data = static_cast<unsigned char *>(MapViewOfFile(_handle, access, 0, 0, _size));
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -191,7 +188,7 @@ inline Error Memory::createOrOpen(const bool create) {
         return kErrorMappingFailed;
     }
 
-    _data = static_cast<uint8_t *>(memory);
+    _data = static_cast<unsigned char *>(memory);
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -252,7 +249,7 @@ public:
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    inline uint32_t getWriteFlags(const uint8_t type) {
+    inline uint32_t getWriteFlags(const unsigned char type) {
         // flip state
         _isInOddWriteMode = !_isInOddWriteMode;
         unsigned char flags = type;
@@ -294,3 +291,4 @@ private:
 
 }; // namespace lsm
 
+#endif // INCLUDE_KYR0_LIBSHAREDMEMORY_HPP_
