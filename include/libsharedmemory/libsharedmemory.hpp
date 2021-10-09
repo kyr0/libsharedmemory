@@ -118,7 +118,7 @@ void Memory::destroy() {
 }
 
 Memory::~Memory() {
-    destroy()
+    destroy();
 }
 #endif // defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
