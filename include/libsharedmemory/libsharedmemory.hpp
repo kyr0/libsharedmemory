@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <cstddef> // nullptr_t, ptrdiff_t, size_t
+#include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -35,7 +35,7 @@ class Memory {
 public:
     // path should only contain alpha-numeric characters, and is normalized
     // on linux/macOS.
-    explicit Memory(std::string path, size_t size, bool persist);
+    explicit Memory(std::string path, std::size_t size, bool persist);
 
     // create a shared memory area and open it for writing
     inline Error create() { return createOrOpen(true); };
@@ -43,7 +43,7 @@ public:
     // open an existing shared memory for reading
     inline Error open() { return createOrOpen(false); };
 
-    inline size_t size() { return _size; };
+    inline std::size_t size() { return _size; };
 
     inline const std::string &path() { return _path; }
 
@@ -58,7 +58,7 @@ private:
 
     std::string _path;
     unsigned char *_data = nullptr;
-    size_t _size = 0;
+    std::size_t _size = 0;
     bool _persist = true;
 #if defined(_WIN32)
     HANDLE _handle;
@@ -72,7 +72,7 @@ private:
 
 #include <io.h>  // CreateFileMappingA, OpenFileMappingA, etc.
 
-Memory::Memory(const std::string path, const size_t size, const bool persist) : _path(path), _size(size), _persist(persist) {};
+Memory::Memory(const std::string path, const std::size_t size, const bool persist) : _path(path), _size(size), _persist(persist) {};
 
 Error Memory::createOrOpen(const bool create) {
     if (create) {
@@ -137,7 +137,7 @@ Memory::~Memory() {
 
 #include <stdexcept>
 
-inline Memory::Memory(const std::string path, const size_t size, const bool persist) : _size(size), _persist(persist) {
+inline Memory::Memory(const std::string path, const std::size_t size, const bool persist) : _size(size), _persist(persist) {
     _path = "/" + path;
 };
 
