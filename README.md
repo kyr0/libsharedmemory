@@ -81,3 +81,8 @@ to verify the correct function of the implementation on your machine:
 ## License
 
 `libsharedmemory` is released under the MIT license, see the `LICENSE` file.
+
+## Roadmap
+
+1) Support for `float32*`, `float64*`, vector data types (without the vector container, `vec.data()`)
+2) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
