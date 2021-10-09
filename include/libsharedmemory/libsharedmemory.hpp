@@ -274,12 +274,12 @@ public:
         memory[0] = getWriteFlags(DataType::kMemoryTypeString);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
-        const char *stringDataVector = dataString.data();
+        const char *stringData = dataString.data();
         uint32_t bufferSize = dataString.size();
         std::memcpy(&memory[1], &bufferSize, sizeof(bufferSize) /* should be always 4 */);
 
-        // 3) copy data vector into memory buffer
-        std::memcpy(&memory[5 /* 1b status; 4b buffer size */], stringDataVector, bufferSize);
+        // 3) copy stringData into memory buffer
+        std::memcpy(&memory[5 /* 1b status; 4b buffer size */], stringData, bufferSize);
     }
 
     inline void destroy() {
