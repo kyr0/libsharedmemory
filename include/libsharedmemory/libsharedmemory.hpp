@@ -276,7 +276,7 @@ public:
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = dataString.data();
         uint32_t bufferSize = dataString.size();
-        std::memcpy(&memory[1], &bufferSize, sizeof(bufferSize) /* should be always 4 */);
+        std::memcpy(&memory[1], &bufferSize, 4 /* uint32_t always takes 4 bytes */);
 
         // 3) copy stringData into memory buffer
         std::memcpy(&memory[5 /* 1b status; 4b buffer size */], stringData, bufferSize);
