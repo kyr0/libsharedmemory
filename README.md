@@ -28,6 +28,23 @@ std::string dataString = read$.read();
 std::cout << "UTF8 string written and read" << dataString << std::endl;
 ```
 
+## Source code package management via `npm`
+
+In case you want to use this library in your codebase,
+you could just copy & paste the `include/libsharedmemory/libsharedmemory.hpp` into your `include` or `deps` directory. But then you'd have to manually manage the code base.
+
+However, you could also use `npm` for a smarter dependency management approach.
+Therefore, install [Node.js](https://www.nodejs.org) which comes bundled with `npm`, the Node package manager.
+
+Now run `npm init` in your project root directoy.
+After initial setup, run `npm install cpp_libsharedmemory` and add `node_modules/cpp_libsharedmemory/include/libsharedmemory` to your include path.
+
+Whenever this library updates, you can also update your dependencies via
+`npm upgrade`. Futhermore, people who audit the code can announce security 
+reports that are announced when running `npm audit`. Finally, it's also much
+easier for you to install all project dependencies by just running `npm install`
+in your projects root directory. Managing third party code becomes obsolete at all. 
+
 ## Limits
 
 `libsharedmemory` does only support the following datatypes:
@@ -41,6 +58,9 @@ Although the binary memory layout should give you no headache
 when compiling/linking using different compilers, 
 the behavior is undefined.
 
+On Windows: Atm no support for shared memory persistency after the process 
+that writes the memory quits.
+
 ## Memory layout
 
 When writing data into a named shared memory segment, `libsharedmemory`
@@ -50,7 +70,7 @@ does write 5 bytes of meta information:
 - `size` (`uint32_t`) indicates the buffer size in bytes (4 bytes)
 
 Therefore the binary memory layout is:
-|flags|size|data|
+`|flags|size|data|`
 
 The following flags are defined:
 ```c
@@ -85,4 +105,5 @@ to verify the correct function of the implementation on your machine:
 ## Roadmap
 
 1) Support for `float32*`, `float64*`, vector data types (without the vector container, `vec.data()`)
-2) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
+2) Windows shared memory persistency support
+3) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream

@@ -1,0 +1,34 @@
+{
+  "name": "cpp_libsharedmemory",
+  "version": "0.0.1",
+  "description": "C++11 header-only library for using shared memory on Windows, Linux and macOS",
+  "main": "include/libsharedmemory/libsharedmemory.hpp",
+  "directories": {
+    "test": "test"
+  },
+  "files": [
+    "include"
+  ],
+  "scripts": {
+    "build": "./build.sh",
+    "pretest": "npm run build",
+    "test": "./test.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyr0/libsharedmemory.git"
+  },
+  "keywords": [
+    "cpp",
+    "shared",
+    "memory",
+    "cross-platform",
+    "library"
+  ],
+  "author": "Aron Homberg <info@aron-homberg.de>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kyr0/libsharedmemory/issues"
+  },
+  "homepage": "https://github.com/kyr0/libsharedmemory#readme"
+}
