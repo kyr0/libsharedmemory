@@ -60,14 +60,37 @@ const lest::test specification[] = {
             SharedMemoryWriteStream write${"varyingDataSizePipe", 65535, true};
             SharedMemoryReadStream read${"varyingDataSizePipe", 65535, true};
 
-            write$.write("abccde" + std::to_string(i));
-            write$.write("abc" + std::to_string(i));
+            std::string t1 = "abccde" + std::to_string(i);
+            write$.write(t1);
+
+            std::string t2 = "abc" + std::to_string(i);
+            write$.write(t2);
 
             std::string dataString = read$.read();
 
-            EXPECT("abc" + std::to_string(i) == dataString);
+            EXPECT(t2 == dataString);
         }
         std::cout << "4. std::string more/less: SUCCESS; 1000 runs" << std::endl;
+    },
+
+    CASE("Write a lot") {
+      std::string blob =
+          "ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab"
+          "😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃a"
+          "b😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃"
+          "ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab😃ab"
+          "😃ab😃ab😃ab😃ab😃ab";
+
+      SharedMemoryWriteStream write${"blobDataSizePipe", 65535, true};
+        SharedMemoryReadStream read${"blobDataSizePipe", 65535, true};
+
+        write$.write(blob);
+
+        std::string dataString = read$.read();
+
+        EXPECT(blob == dataString);
+
+        std::cout << "5. std::string blob: SUCCESS" << std::endl;
     }
 
     /*
