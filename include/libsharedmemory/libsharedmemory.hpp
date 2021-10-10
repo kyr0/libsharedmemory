@@ -2,9 +2,9 @@
 #ifndef INCLUDE_LIBSHAREDMEMORY_HPP_
 #define INCLUDE_LIBSHAREDMEMORY_HPP_
 
-#define LIBSHAREDMEMORY_VERSION_MAJOR 1
+#define LIBSHAREDMEMORY_VERSION_MAJOR 0
 #define LIBSHAREDMEMORY_VERSION_MINOR 0
-#define LIBSHAREDMEMORY_VERSION_PATCH 0
+#define LIBSHAREDMEMORY_VERSION_PATCH 3
 
 #include <chrono>
 #include <cstdint>
@@ -338,8 +338,6 @@ public:
         // 1) copy change flag into buffer for change detection
         memory[0] = getWriteFlags(kMemoryTypeString, memory[0]);
 
-        // TODO: read prev. size before and clean!
-        
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = dataString.data();
         const std::size_t bufferSize = dataString.size();
