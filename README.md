@@ -1,6 +1,6 @@
 # `libsharedmemory`
 
-`libsharedmemory` is a small C++11 header-only library for using shared memory on Windows, Linux and macOS. It makes it easy to transfer data between isolated processes and threads. It also helps inter-connecting . It allows for simple read/write data transfer of `uint8_t*` / `unsigned char*` and `std::string`.
+`libsharedmemory` is a small C++11 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated processes and threads. It also helps inter-connecting modules of applications that are implemented in different programming languages. It allows for simple read/write data transfer of `uint8_t*` / `unsigned char*` and `std::string`.
 
 <img src="screenshot.png" width="350px" />
 
