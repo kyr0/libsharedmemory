@@ -1,14 +1,18 @@
 
-#ifndef INCLUDE_KYR0_LIBSHAREDMEMORY_HPP_
-#define INCLUDE_KYR0_LIBSHAREDMEMORY_HPP_
+#ifndef INCLUDE_LIBSHAREDMEMORY_HPP_
+#define INCLUDE_LIBSHAREDMEMORY_HPP_
 
-#define KYR0_LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define KYR0_LIBSHAREDMEMORY_VERSION_MINOR 0
-#define KYR0_LIBSHAREDMEMORY_VERSION_PATCH 0
+#define LIBSHAREDMEMORY_VERSION_MAJOR 1
+#define LIBSHAREDMEMORY_VERSION_MINOR 0
+#define LIBSHAREDMEMORY_VERSION_PATCH 0
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <mutex>
+#include <thread>
+#include <iostream>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 
 #if defined(_WIN32)
@@ -30,6 +34,10 @@ enum DataType {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
 };
+
+// byte sizes of memory layout
+const size_t bufferSizeSize = 4;
+const size_t flagSize = 1;
 
 class Memory {
 public:
@@ -90,15 +98,22 @@ Error Memory::createOrOpen(const bool create) {
             return kErrorCreationFailed;
         }
     } else {
-        _handle = OpenFileMappingA(FILE_MAP_READ,  // read access
-                                    FALSE,          // do not inherit the name
-                                    _path.c_str()   // name of mapping object
-        );
+      _handle = OpenFileMappingA(FILE_MAP_READ, // read access
+                                 FALSE,         // do not inherit the name
+                                 _path.c_str()  // name of mapping object
+      );
+
+      // TODO: Windows has no default support for shared memory persistence
+      // see: destroy() to implement that
 
         if (!_handle) {
             return kErrorOpeningFailed;
         }
     }
+
+    // TODO: might want to use GetWriteWatch to get called whenever
+    // the memory section changes
+    // https://docs.microsoft.com/de-de/windows/win32/api/memoryapi/nf-memoryapi-getwritewatch?redirectedfrom=MSDN
 
     const DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
     _data = static_cast<unsigned char *>(MapViewOfFile(_handle, access, 0, 0, _size));
@@ -110,15 +125,25 @@ Error Memory::createOrOpen(const bool create) {
 }
 
 void Memory::destroy() {
+
+  // TODO: Windows needs priviledges to define a shared memory (file mapping)
+  // OBJ_PERMANENT; furthermore, ZwCreateSection would need to be used.
+  // Instead of doing this; saving a file here (by name, temp dir)
+  // and reading memory from file in createOrOpen seems more suitable.
+  // Especially, because files can be removed on reboot using:
+  // MoveFileEx() with the MOVEFILE_DELAY_UNTIL_REBOOT flag and lpNewFileName
+  // set to NULL.
+}
+
+Memory::~Memory() {
     if (_data) {
         UnmapViewOfFile(_data);
         _data = nullptr;
     }
     CloseHandle(_handle);
-}
-
-Memory::~Memory() {
-    destroy();
+    if (!_persist) {
+      destroy();
+    }
 }
 #endif // defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
@@ -197,12 +222,12 @@ inline Error Memory::createOrOpen(const bool create) {
 }
 
 inline void Memory::destroy() {
-    munmap(_data, _size);
-    close(_fd);
     shm_unlink(_path.c_str());
 }
 
 inline Memory::~Memory() {
+    munmap(_data, _size);
+    close(_fd);
     if (!_persist) {
         destroy();
     }
@@ -221,27 +246,72 @@ public:
         }
     }
 
-    inline std::string read() {
+    inline std::string& read() {
+        std::string *data;
         unsigned char* memory = _memory.data();
 
         std::size_t size;
-        std::memcpy(&size, &memory[1], 4 /*uint32 takes 4 byte*/);
 
-        // 3) deserialize the buffer vector data
-        const std::string data(reinterpret_cast<const char*>(&memory[5]), size);
-        return data;
+        // copy buffer size
+        std::memcpy(&size, &memory[flagSize], bufferSizeSize);
+
+        // create a string that copies the data from memory
+        // location while re-interpreting unsinged char* to const char*
+        data = new std::string(reinterpret_cast<const char *>(
+                                &memory[flagSize + bufferSizeSize]),
+                                size);
+        return *data;
     }
+
+    /*
+
+    void onChange(void (*cb)(std::string&)) {
+        std::thread t;
+
+      t = std::thread([&] {
+        unsigned char _flags;
+        unsigned char flags = _memory.data()[0];
+
+        std::string &data = read();
+
+        if (cb && data[0]) {
+          cb(data);
+        }
+
+        while (true) {
+
+          //std::this_thread::sleep_for(std::chrono::microseconds(1));
+
+          if (_memory.data() && _memory.data()[0]) {
+            _flags = _memory.data()[0];
+
+            if (((_flags & (kMemoryChanged)) == (kMemoryChanged)) !=
+                ((flags & (kMemoryChanged)) == (kMemoryChanged))) {
+
+                if (cb) {
+                  std::string data = read();
+
+                  if (data[0]) {
+                    cb(data);
+                }
+                }
+            }
+          }
+        }
+      });
+        t.detach();
+    }
+    */
 
 private:
     Memory _memory;
-    //bool _isInOddWriteMode;
 };
 
 class SharedMemoryWriteStream {
 public:
 
     explicit SharedMemoryWriteStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
-        _memory(name, bufferSize, isPersistent), _isInOddWriteMode(false) {
+        _memory(name, bufferSize, isPersistent) {
 
         if (_memory.create() != kOK) {
             throw "Shared memory segment could not be created.";
@@ -249,17 +319,16 @@ public:
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    inline uint32_t getWriteFlags(const unsigned char type) {
-        // flip state
-        _isInOddWriteMode = !_isInOddWriteMode;
+    inline unsigned char getWriteFlags(const unsigned char type,
+                                       const unsigned char currentFlags) {
         unsigned char flags = type;
 
-        if (_isInOddWriteMode) {
-            // enable flag, leave rest untouched
-            flags ^= DataType::kMemoryChanged;
-        } else {
+        if ((currentFlags & (kMemoryChanged)) == kMemoryChanged) {
             // disable flag, leave rest untouched
-            flags &= ~DataType::kMemoryChanged;
+            flags &= ~kMemoryChanged;
+        } else {
+            // enable flag, leave rest untouched
+            flags ^= kMemoryChanged;
         }
         return flags;
     }
@@ -268,15 +337,17 @@ public:
         unsigned char* memory = _memory.data();
 
         // 1) copy change flag into buffer for change detection
-        memory[0] = getWriteFlags(DataType::kMemoryTypeString);
+        memory[0] = getWriteFlags(kMemoryTypeString, memory[0]);
 
+        // TODO: read prev. size before and clean!
+        
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = dataString.data();
         const std::size_t bufferSize = dataString.size();
-        std::memcpy(&memory[1], &bufferSize, 4 /* uint32_t always takes 4 bytes */);
+        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
 
         // 3) copy stringData into memory buffer
-        std::memcpy(&memory[5 /* 1b status; 4b buffer size */], stringData, bufferSize);
+        std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
     }
 
     inline void destroy() {
@@ -285,10 +356,9 @@ public:
 
 private:
     Memory _memory;
-    bool _isInOddWriteMode;
 };
 
 
 }; // namespace lsm
 
-#endif // INCLUDE_KYR0_LIBSHAREDMEMORY_HPP_
+#endif // INCLUDE_LIBSHAREDMEMORY_HPP_

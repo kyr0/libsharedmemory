@@ -1,9 +1,16 @@
+//#include <chrono>
 #include <libsharedmemory/libsharedmemory.hpp>
 #include "lest.hpp"
 #include <iostream>
+//#include <thread>
+//#include <random>
 
 using namespace std;
 using namespace lsm;
+
+// random device and generator
+//std::random_device _rd;
+//std::mt19937 _gen(_rd());
 
 const lest::test specification[] = {
     CASE("shared memory can be created and opened and transfer uint8_t") {
@@ -29,7 +36,7 @@ const lest::test specification[] = {
         std::cout << "2. error when opening non-existing segment: SUCCESS" << std::endl;
     },
 
-    CASE("using MemoryStreamWriter and MemoryStreamReder to transfer "
+    CASE("using MemoryStreamWriter and MemoryStreamReader to transfer "
         "std::string") {
 
         std::string dataToTransfer = "{ foo: 'coolest IPC ever! 🧑‍💻' }";
@@ -43,8 +50,62 @@ const lest::test specification[] = {
 
         std::cout << "3. std::string (UTF8): SUCCESS | " << dataString << std::endl;
 
-        EXPECT(dataToTransfer == dataString);      
+        EXPECT(dataToTransfer == dataString);
+    }
+    ,
+
+    CASE("Write more then less, then read") {
+
+        for (int i=0; i<1000; i++) {
+            SharedMemoryWriteStream write${"varyingDataSizePipe", 65535, true};
+            SharedMemoryReadStream read${"varyingDataSizePipe", 65535, true};
+
+            write$.write("abccde" + std::to_string(i));
+            write$.write("abc" + std::to_string(i));
+
+            std::string dataString = read$.read();
+
+            EXPECT("abc" + std::to_string(i) == dataString);
+        }
+        std::cout << "4. std::string more/less: SUCCESS; 1000 runs" << std::endl;
+    }
+
+    /*
+
+    CASE("using onChange to listen for changes in shared memory") {
+
+       std::string dataToTransfer = "{ foo: 'coolest IPC ever! 🧑‍💻' }";
+
+        SharedMemoryWriteStream write${"jsonPipe2", 65535, true};
+        SharedMemoryReadStream read${"jsonPipe2", 65535, true};
+
+        // test sync write early (buffer filled)
+        write$.write(dataToTransfer);
+
+        read$.onChange([](std::string &dataChanged) {
+            std::cout << "lambda, dataChanged " << dataChanged << std::endl;
+        });
+
+
+        // test sync write late
+        write$.write("test1");
+
+        std::thread writeSimulator;
+
+        // test async writing
+        writeSimulator = std::thread([&] {
+
+          // random between 5ms and 200ms distribution
+           std::uniform_int_distribution<> randomDistribution(5, 200);
+
+          for (int i = 0; i < 20; i++) {
+            write$.write("changedData");
+            std::this_thread::sleep_for(std::chrono::milliseconds(randomDistribution(_gen)));
+          }
+        });
+        writeSimulator.join();
     },
+    */
 };
 
 int main (int argc, char *argv[]) {
