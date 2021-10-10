@@ -246,21 +246,20 @@ public:
         }
     }
 
-    inline std::string& read() {
-        std::string *data;
+    inline std::string read() {
         unsigned char* memory = _memory.data();
 
-        std::size_t size;
+        std::size_t size = 0;
 
         // copy buffer size
         std::memcpy(&size, &memory[flagSize], bufferSizeSize);
 
         // create a string that copies the data from memory
         // location while re-interpreting unsinged char* to const char*
-        data = new std::string(reinterpret_cast<const char *>(
-                                &memory[flagSize + bufferSizeSize]),
-                                size);
-        return *data;
+        std::string data = std::string(
+            reinterpret_cast<const char *>(&memory[flagSize + bufferSizeSize]),
+            size);
+        return data;
     }
 
     /*
@@ -333,7 +332,7 @@ public:
         return flags;
     }
 
-    inline void write(const std::string dataString) {
+    inline void write(const std::string& dataString) {
         unsigned char* memory = _memory.data();
 
         // 1) copy change flag into buffer for change detection
