@@ -116,8 +116,9 @@ const lest::test specification[] = {
 
         EXPECT((flagsData2 & ~kMemoryChanged));
 
-        std::cout << "6.2 status bit flips to zero when writing again: SUCCESS: 0b"
-                  << flags2 << std::endl;
+        std::cout
+            << "6.2 status bit flips to zero when writing again: SUCCESS: 0b"
+            << flags2 << std::endl;
     },
 
     CASE("Can write and read a float* array") {
@@ -145,6 +146,8 @@ const lest::test specification[] = {
       EXPECT(numbers[71] == numbersReadPtr[71]);
 
       std::cout << "6. float[72]: SUCCESS" << std::endl;
+
+      delete [] numbersReadPtr;
     },
 };
 

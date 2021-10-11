@@ -48,8 +48,8 @@ in your projects root directory. Managing third party code becomes obsolete at a
 ## Limits
 
 `libsharedmemory` does only support the following datatypes:
-- UTF8 strings (`std::string`)
-- byte buffers, small integers (`uint8_t*`, `unsigned char*`)
+- `std::string`
+- `float*`
 
 There is no explicit handling of endinanness. Memory interpretation 
 issues may happen when transferring the memory between different machines/vm.

@@ -252,6 +252,12 @@ public:
       return memory[0];
     }
 
+    /**
+     * @brief Returns a float* read from shared memory
+     * Caller has the obligation to call delete [] on the returning float*.
+     * 
+     * @return float* 
+     */
     inline float* readFloat() {
         void *memory = _memory.data();
         int* intMemory = (int*) memory; 
@@ -263,11 +269,12 @@ public:
         // copy size data to size variable
         std::memcpy(&size,  &intMemory[flagSize], bufferSizeSize);
 
+        // allocating memory on heap (this might leak)
         float *data = new float[size / sizeOfOneFloat]();
 
         // copy to data buffer
         std::memcpy(data, &floatMemory[flagSize + bufferSizeSize], size);
-
+        
         return data;
     }
 
