@@ -6,12 +6,9 @@
 #define LIBSHAREDMEMORY_VERSION_MINOR 0
 #define LIBSHAREDMEMORY_VERSION_PATCH 3
 
-#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <mutex>
-#include <thread>
 #include <iostream>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 
@@ -33,11 +30,17 @@ enum Error {
 enum DataType {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
+  kMemoryTypeFloat = 4,
+  kMemoryTypeDouble = 8,
+  kMemoryTypeInt = 16,
+  kMemoryTypeLong = 32,
+  kMemoryTypeChar = 64,
 };
 
 // byte sizes of memory layout
-const size_t bufferSizeSize = 4;
-const size_t flagSize = 1;
+const size_t bufferSizeSize = 4; // size_t takes 4 bytes
+const size_t sizeOfOneFloat = 4; // float takes 4 bytes
+const size_t flagSize = 1; // char takes 1 byte
 
 class Memory {
 public:
@@ -55,7 +58,7 @@ public:
 
     inline const std::string &path() { return _path; }
 
-    inline char *data() { return _data; }
+    inline void *data() { return _data; }
 
     void destroy();
 
@@ -65,7 +68,7 @@ private:
     Error createOrOpen(bool create);
 
     std::string _path;
-    char *_data = nullptr;
+    void *_data = nullptr;
     std::size_t _size = 0;
     bool _persist = true;
 #if defined(_WIN32)
@@ -116,7 +119,7 @@ Error Memory::createOrOpen(const bool create) {
     // https://docs.microsoft.com/de-de/windows/win32/api/memoryapi/nf-memoryapi-getwritewatch?redirectedfrom=MSDN
 
     const DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
-    _data = static_cast<char *>(MapViewOfFile(_handle, access, 0, 0, _size));
+    _data = MapViewOfFile(_handle, access, 0, 0, _size);
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -201,19 +204,17 @@ inline Error Memory::createOrOpen(const bool create) {
 
     const int prot = create ? (PROT_READ | PROT_WRITE) : PROT_READ;
 
-    void *memory = mmap(nullptr,    // addr
-                        _size,      // length
-                        prot,       // prot
-                        MAP_SHARED, // flags
-                        _fd,        // fd
-                        0           // offset
+    _data = mmap(nullptr,    // addr
+                 _size,      // length
+                 prot,       // prot
+                 MAP_SHARED, // flags
+                 _fd,        // fd
+                 0           // offset
     );
 
-    if (memory == MAP_FAILED) {
+    if (_data == MAP_FAILED) {
         return kErrorMappingFailed;
     }
-
-    _data = static_cast<char *>(memory);
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -246,8 +247,32 @@ public:
         }
     }
 
-    inline std::string read() {
-        char* memory = _memory.data();
+    inline char readFlags() {
+      char *memory = (char*) _memory.data();
+      return memory[0];
+    }
+
+    inline float* readFloat() {
+        void *memory = _memory.data();
+        int* intMemory = (int*) memory; 
+        float* floatMemory = (float*) memory; 
+
+        // define value to allocate 4 byte for the size_t
+        std::size_t size = 0;
+
+        // copy size data to size variable
+        std::memcpy(&size,  &intMemory[flagSize], bufferSizeSize);
+
+        float *data = new float[size / sizeOfOneFloat]();
+
+        // copy to data buffer
+        std::memcpy(data, &floatMemory[flagSize + bufferSizeSize], size);
+
+        return data;
+    }
+
+    inline std::string readString() {
+        char* memory = (char*) _memory.data();
 
         std::size_t size = 0;
 
@@ -256,49 +281,11 @@ public:
 
         // create a string that copies the data from memory
         // location while re-interpreting unsinged char* to const char*
-        std::string data = std::string(&memory[flagSize + bufferSizeSize], size);
+        std::string data =
+            std::string(&memory[flagSize + bufferSizeSize], size);
+        
         return data;
     }
-
-    /*
-
-    void onChange(void (*cb)(std::string&)) {
-        std::thread t;
-
-      t = std::thread([&] {
-        unsigned char _flags;
-        unsigned char flags = _memory.data()[0];
-
-        std::string &data = read();
-
-        if (cb && data[0]) {
-          cb(data);
-        }
-
-        while (true) {
-
-          //std::this_thread::sleep_for(std::chrono::microseconds(1));
-
-          if (_memory.data() && _memory.data()[0]) {
-            _flags = _memory.data()[0];
-
-            if (((_flags & (kMemoryChanged)) == (kMemoryChanged)) !=
-                ((flags & (kMemoryChanged)) == (kMemoryChanged))) {
-
-                if (cb) {
-                  std::string data = read();
-
-                  if (data[0]) {
-                    cb(data);
-                }
-                }
-            }
-          }
-        }
-      });
-        t.detach();
-    }
-    */
 
 private:
     Memory _memory;
@@ -316,9 +303,9 @@ public:
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    inline unsigned char getWriteFlags(const unsigned char type,
-                                       const unsigned char currentFlags) {
-        unsigned char flags = type;
+    inline char getWriteFlags(const char type,
+                              const char currentFlags) {
+        char flags = type;
 
         if ((currentFlags & (kMemoryChanged)) == kMemoryChanged) {
             // disable flag, leave rest untouched
@@ -330,19 +317,34 @@ public:
         return flags;
     }
 
-    inline void write(const std::string& dataString) {
-        char* memory = _memory.data();
+    inline void write(const std::string& string) {
+        char* memory = (char*) _memory.data();
 
         // 1) copy change flag into buffer for change detection
         memory[0] = getWriteFlags(kMemoryTypeString, memory[0]);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
-        const char *stringData = dataString.data();
-        const std::size_t bufferSize = dataString.size();
+        const char *stringData = string.data();
+        const std::size_t bufferSize = string.size();
+
+        // write data
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
 
         // 3) copy stringData into memory buffer
         std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
+    }
+
+    inline void write(float* data, std::size_t length) {
+        float* memory = (float*) _memory.data();
+
+        memory[0] = getWriteFlags(kMemoryTypeFloat, memory[0]);
+
+        // 2) copy buffer size into buffer (meta data for deserializing)
+        const std::size_t bufferSize = length * sizeOfOneFloat;
+        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
+        
+        // 3) copy float* into memory buffer
+        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
     }
 
     inline void destroy() {

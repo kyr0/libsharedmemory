@@ -1,24 +1,19 @@
-//#include <chrono>
 #include <libsharedmemory/libsharedmemory.hpp>
 #include "lest.hpp"
 #include <iostream>
-//#include <thread>
-//#include <random>
+#include <string>
+#include <bitset>
 
 using namespace std;
 using namespace lsm;
-
-// random device and generator
-//std::random_device _rd;
-//std::mt19937 _gen(_rd());
 
 const lest::test specification[] = {
     CASE("shared memory can be created and opened and transfer uint8_t") {
         Memory memoryWriter {"lsmtest", 64, true};
         EXPECT(kOK == memoryWriter.create());
 
-        memoryWriter.data()[0] = 0x11;
-        memoryWriter.data()[1] = 0x34;
+        ((char*)memoryWriter.data())[0] = 0x11;
+        ((char*)memoryWriter.data())[1] = 0x34;
 
         Memory memoryReader{"lsmtest", 64, true};
 
@@ -26,8 +21,8 @@ const lest::test specification[] = {
 
         std::cout << "1. single uint8_t: SUCCESS" << std::endl;
 
-        EXPECT(0x11 == memoryReader.data()[0]);
-        EXPECT(0x34 == memoryReader.data()[1]);
+        EXPECT(0x11 == ((char*)memoryReader.data())[0]);
+        EXPECT(0x34 == ((char*)memoryReader.data())[1]);
     },
 
     CASE("non-existing shared memory objects err") {
@@ -46,7 +41,7 @@ const lest::test specification[] = {
 
         write$.write(dataToTransfer);
 
-        std::string dataString = read$.read();
+        std::string dataString = read$.readString();
 
         std::cout << "3. std::string (UTF8): SUCCESS | " << dataString << std::endl;
 
@@ -66,7 +61,7 @@ const lest::test specification[] = {
             std::string t2 = "abc" + std::to_string(i);
             write$.write(t2);
 
-            std::string dataString = read$.read();
+            std::string dataString = read$.readString();
 
             EXPECT(t2 == dataString);
         }
@@ -86,49 +81,71 @@ const lest::test specification[] = {
 
         write$.write(blob);
 
-        std::string dataString = read$.read();
+        std::string dataString = read$.readString();
 
         EXPECT(blob == dataString);
 
         std::cout << "5. std::string blob: SUCCESS" << std::endl;
-    }
-
-    /*
-
-    CASE("using onChange to listen for changes in shared memory") {
-
-       std::string dataToTransfer = "{ foo: 'coolest IPC ever! 🧑‍💻' }";
-
-        SharedMemoryWriteStream write${"jsonPipe2", 65535, true};
-        SharedMemoryReadStream read${"jsonPipe2", 65535, true};
-
-        // test sync write early (buffer filled)
-        write$.write(dataToTransfer);
-
-        read$.onChange([](std::string &dataChanged) {
-            std::cout << "lambda, dataChanged " << dataChanged << std::endl;
-        });
-
-
-        // test sync write late
-        write$.write("test1");
-
-        std::thread writeSimulator;
-
-        // test async writing
-        writeSimulator = std::thread([&] {
-
-          // random between 5ms and 200ms distribution
-           std::uniform_int_distribution<> randomDistribution(5, 200);
-
-          for (int i = 0; i < 20; i++) {
-            write$.write("changedData");
-            std::this_thread::sleep_for(std::chrono::milliseconds(randomDistribution(_gen)));
-          }
-        });
-        writeSimulator.join();
     },
-    */
+
+    CASE("Can read flags, sets the right datatype and data change bit flips") {
+
+        SharedMemoryWriteStream write${"blobDataSizePipe2", 65535, true};
+        SharedMemoryReadStream read${"blobDataSizePipe2", 65535, true};
+
+        write$.write("foo!");
+
+        char flagsData = read$.readFlags();
+
+        std::bitset<8> flags(flagsData);
+
+        EXPECT((flagsData & kMemoryTypeString));
+
+        std::cout << "6. status flag shows string data type flag: SUCCESS: 0b"
+                  << flags << std::endl;
+        
+        EXPECT((flagsData & kMemoryChanged));
+
+        std::cout << "6.1 status flag has the change bit set: SUCCESS: 0b"
+                  << flags << std::endl;
+
+        write$.write("foo!");
+
+        char flagsData2 = read$.readFlags();
+        std::bitset<8> flags2(flagsData2);
+
+        EXPECT((flagsData2 & ~kMemoryChanged));
+
+        std::cout << "6.2 status bit flips to zero when writing again: SUCCESS: 0b"
+                  << flags2 << std::endl;
+    },
+
+    CASE("Can write and read a float* array") {
+
+      float numbers[72] = {
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f,
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f,
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f,
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f,
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f,
+        1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 3.14f, 1.3f, 3.4f, 6.14f,
+      };
+      
+      SharedMemoryWriteStream write${"numberPipe", 65535, true};
+      SharedMemoryReadStream read${"numberPipe", 65535, true};
+
+      write$.write(numbers, 72);
+
+      float* numbersReadPtr = read$.readFloat();
+
+      EXPECT(numbers[0] == numbersReadPtr[0]);
+      EXPECT(numbers[1] == numbersReadPtr[1]);
+      EXPECT(numbers[2] == numbersReadPtr[2]);
+      EXPECT(numbers[3] == numbersReadPtr[3]);
+      EXPECT(numbers[71] == numbersReadPtr[71]);
+
+      std::cout << "6. float[72]: SUCCESS" << std::endl;
+    },
 };
 
 int main (int argc, char *argv[]) {
