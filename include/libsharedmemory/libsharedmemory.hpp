@@ -55,7 +55,7 @@ public:
 
     inline const std::string &path() { return _path; }
 
-    inline unsigned char *data() { return _data; }
+    inline char *data() { return _data; }
 
     void destroy();
 
@@ -65,7 +65,7 @@ private:
     Error createOrOpen(bool create);
 
     std::string _path;
-    unsigned char *_data = nullptr;
+    char *_data = nullptr;
     std::size_t _size = 0;
     bool _persist = true;
 #if defined(_WIN32)
@@ -116,7 +116,7 @@ Error Memory::createOrOpen(const bool create) {
     // https://docs.microsoft.com/de-de/windows/win32/api/memoryapi/nf-memoryapi-getwritewatch?redirectedfrom=MSDN
 
     const DWORD access = create ? FILE_MAP_ALL_ACCESS : FILE_MAP_READ;
-    _data = static_cast<unsigned char *>(MapViewOfFile(_handle, access, 0, 0, _size));
+    _data = static_cast<char *>(MapViewOfFile(_handle, access, 0, 0, _size));
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -213,7 +213,7 @@ inline Error Memory::createOrOpen(const bool create) {
         return kErrorMappingFailed;
     }
 
-    _data = static_cast<unsigned char *>(memory);
+    _data = static_cast<char *>(memory);
 
     if (!_data) {
         return kErrorMappingFailed;
@@ -247,7 +247,7 @@ public:
     }
 
     inline std::string read() {
-        unsigned char* memory = _memory.data();
+        char* memory = _memory.data();
 
         std::size_t size = 0;
 
@@ -256,9 +256,7 @@ public:
 
         // create a string that copies the data from memory
         // location while re-interpreting unsinged char* to const char*
-        std::string data = std::string(
-            reinterpret_cast<const char *>(&memory[flagSize + bufferSizeSize]),
-            size);
+        std::string data = std::string(&memory[flagSize + bufferSizeSize], size);
         return data;
     }
 
@@ -333,7 +331,7 @@ public:
     }
 
     inline void write(const std::string& dataString) {
-        unsigned char* memory = _memory.data();
+        char* memory = _memory.data();
 
         // 1) copy change flag into buffer for change detection
         memory[0] = getWriteFlags(kMemoryTypeString, memory[0]);
