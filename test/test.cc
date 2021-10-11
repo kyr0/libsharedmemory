@@ -12,8 +12,8 @@ const lest::test specification[] = {
         Memory memoryWriter {"lsmtest", 64, true};
         EXPECT(kOK == memoryWriter.create());
 
-        ((char*)memoryWriter.data())[0] = 0x11;
-        ((char*)memoryWriter.data())[1] = 0x34;
+        ((uint8_t*)memoryWriter.data())[0] = 0x11;
+        ((uint8_t*)memoryWriter.data())[1] = 0x34;
 
         Memory memoryReader{"lsmtest", 64, true};
 
@@ -21,8 +21,8 @@ const lest::test specification[] = {
 
         std::cout << "1. single uint8_t: SUCCESS" << std::endl;
 
-        EXPECT(0x11 == ((char*)memoryReader.data())[0]);
-        EXPECT(0x34 == ((char*)memoryReader.data())[1]);
+        EXPECT(0x11 == ((uint8_t*)memoryReader.data())[0]);
+        EXPECT(0x34 == ((uint8_t*)memoryReader.data())[1]);
     },
 
     CASE("non-existing shared memory objects err") {
@@ -31,8 +31,7 @@ const lest::test specification[] = {
         std::cout << "2. error when opening non-existing segment: SUCCESS" << std::endl;
     },
 
-    CASE("using MemoryStreamWriter and MemoryStreamReader to transfer "
-        "std::string") {
+    CASE("using MemoryStreamWriter and MemoryStreamReader to transfer std::string") {
 
         std::string dataToTransfer = "{ foo: 'coolest IPC ever! 🧑‍💻' }";
 

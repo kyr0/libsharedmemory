@@ -47,9 +47,13 @@ in your projects root directory. Managing third party code becomes obsolete at a
 
 ## Limits
 
-`libsharedmemory` does only support the following datatypes:
+`libsharedmemory` does only support the following datatypes (array-like):
 - `std::string`
 - `float*`
+- to be continued
+
+Single value access via `.data()[index]` API:
+- all data types C++ supports
 
 There is no explicit handling of endinanness. Memory interpretation 
 issues may happen when transferring the memory between different machines/vm.
@@ -66,19 +70,24 @@ that writes the memory quits.
 When writing data into a named shared memory segment, `libsharedmemory`
 does write 5 bytes of meta information:
 
-- `flags` (`uint8_t`) is a bitmask that indicates data change (via an odd/even bit flip) as well as the data type transferred (1 byte)
-- `size` (`uint32_t`) indicates the buffer size in bytes (4 bytes)
+- `flags` (`char`) is a bitmask that indicates data change (via an odd/even bit flip) as well as the data type transferred (1 byte)
+- `size` (`std::size_t`) indicates the buffer size in bytes (4 bytes)
 
 Therefore the binary memory layout is:
 `|flags|size|data|`
 
-The following flags are defined:
+The following datatype flags are defined:
 ```c
 enum DataType {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
+  kMemoryTypeFloat = 4,
 };
 ```
+
+`kMemoryChanged` is the change indicator bit. It will flip odd/evenly
+to indicate data change. Continuous data reader will thus be able 
+to catch every data change. 
 
 ## Build
 
