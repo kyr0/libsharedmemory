@@ -2,6 +2,7 @@
 #ifndef INCLUDE_LIBSHAREDMEMORY_HPP_
 #define INCLUDE_LIBSHAREDMEMORY_HPP_
 
+#include <ostream>
 #define LIBSHAREDMEMORY_VERSION_MAJOR 0
 #define LIBSHAREDMEMORY_VERSION_MINOR 0
 #define LIBSHAREDMEMORY_VERSION_PATCH 3
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <unistd.h>
 #include <iostream>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 
@@ -40,6 +42,7 @@ enum DataType {
 // byte sizes of memory layout
 const size_t bufferSizeSize = 4; // size_t takes 4 bytes
 const size_t sizeOfOneFloat = 4; // float takes 4 bytes
+const size_t sizeOfOneDouble = 8; // double takes 8 bytes
 const size_t flagSize = 1; // char takes 1 byte
 
 class Memory {
@@ -61,6 +64,8 @@ public:
     inline void *data() { return _data; }
 
     void destroy();
+
+    void close();
 
     ~Memory();
 
@@ -138,12 +143,16 @@ void Memory::destroy() {
   // set to NULL.
 }
 
-Memory::~Memory() {
+void Memory::close() {
     if (_data) {
         UnmapViewOfFile(_data);
         _data = nullptr;
     }
     CloseHandle(_handle);
+}
+
+Memory::~Memory() {
+    close();
     if (!_persist) {
       destroy();
     }
@@ -222,13 +231,15 @@ inline Error Memory::createOrOpen(const bool create) {
     return kOK;
 }
 
-inline void Memory::destroy() {
-    shm_unlink(_path.c_str());
+inline void Memory::destroy() { shm_unlink(_path.c_str()); }
+
+inline void Memory::close() {
+  munmap(_data, _size);
+  ::close(_fd);
 }
 
 inline Memory::~Memory() {
-    munmap(_data, _size);
-    close(_fd);
+    close();
     if (!_persist) {
         destroy();
     }
@@ -258,10 +269,10 @@ public:
      * 
      * @return float* 
      */
-    inline float* readFloat() {
+    inline float* readFloatArray() {
         void *memory = _memory.data();
         int* intMemory = (int*) memory; 
-        float* floatMemory = (float*) memory; 
+        float* typedMemory = (float*) memory; 
 
         // define value to allocate 4 byte for the size_t
         std::size_t size = 0;
@@ -273,7 +284,43 @@ public:
         float *data = new float[size / sizeOfOneFloat]();
 
         // copy to data buffer
-        std::memcpy(data, &floatMemory[flagSize + bufferSizeSize], size);
+        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
+        
+        return data;
+    }
+
+    inline void close() {
+      _memory.close();
+    }
+
+    /**
+     * @brief Returns a doible* read from shared memory
+     * Caller has the obligation to call delete [] on the returning float*.
+     *
+     * @return float*
+     */
+    // TODO: might wanna use templated functions here like: <T> readNumericArray()
+    inline double* readDoubleArray() {
+        void *memory = _memory.data();
+        // TODO(kyr0): should be clarified why we need to use size_t there
+        // for the size to be received correctly, but in float, we need int
+        // Might be prone to undefined behaviour; should be tested
+        // with various compilers; otherwise use memcpy() for the size
+        // and align the memory with one cast.
+        size_t* intMemory = (size_t*) memory; 
+        double* typedMemory = (double*) memory; 
+
+        // define value to allocate 4 byte for the size_t
+        std::size_t size = 0;
+
+        // copy size data to size variable
+        std::memcpy(&size,  &intMemory[flagSize], bufferSizeSize);
+
+        // allocating memory on heap (this might leak)
+        double *data = new double[size / sizeOfOneDouble]();
+
+        // copy to data buffer
+        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
         
         return data;
     }
@@ -287,7 +334,6 @@ public:
         std::memcpy(&size, &memory[flagSize], bufferSizeSize);
 
         // create a string that copies the data from memory
-        // location while re-interpreting unsinged char* to const char*
         std::string data =
             std::string(&memory[flagSize + bufferSizeSize], size);
         
@@ -307,6 +353,10 @@ public:
         if (_memory.create() != kOK) {
             throw "Shared memory segment could not be created.";
         }
+    }
+
+    inline void close() {
+      _memory.close();
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
@@ -341,6 +391,8 @@ public:
         std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
     }
 
+    // TODO: might wanna use template function here for numeric arrays,
+    // like void writeNumericArray(<T*> data, std::size_t length)
     inline void write(float* data, std::size_t length) {
         float* memory = (float*) _memory.data();
 
@@ -351,6 +403,20 @@ public:
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
         
         // 3) copy float* into memory buffer
+        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
+    }
+
+    inline void write(double* data, std::size_t length) {
+        double* memory = (double*) _memory.data();
+
+        memory[0] = getWriteFlags(kMemoryTypeDouble, memory[0]);
+
+        // 2) copy buffer size into buffer (meta data for deserializing)
+        const std::size_t bufferSize = length * sizeOfOneDouble;
+
+        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
+        
+        // 3) copy double* into memory buffer
         std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
     }
 

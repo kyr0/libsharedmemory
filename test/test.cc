@@ -1,6 +1,7 @@
 #include <libsharedmemory/libsharedmemory.hpp>
 #include "lest.hpp"
 #include <iostream>
+#include <ostream>
 #include <string>
 #include <bitset>
 
@@ -22,7 +23,10 @@ const lest::test specification[] = {
         std::cout << "1. single uint8_t: SUCCESS" << std::endl;
 
         EXPECT(0x11 == ((uint8_t*)memoryReader.data())[0]);
-        EXPECT(0x34 == ((uint8_t*)memoryReader.data())[1]);
+        EXPECT(0x34 == ((uint8_t *)memoryReader.data())[1]);
+
+        memoryWriter.close();
+        memoryReader.close();
     },
 
     CASE("non-existing shared memory objects err") {
@@ -45,6 +49,9 @@ const lest::test specification[] = {
         std::cout << "3. std::string (UTF8): SUCCESS | " << dataString << std::endl;
 
         EXPECT(dataToTransfer == dataString);
+
+        write$.close();
+        read$.close();
     }
     ,
 
@@ -53,7 +60,7 @@ const lest::test specification[] = {
         for (int i=0; i<1000; i++) {
             SharedMemoryWriteStream write${"varyingDataSizePipe", 65535, true};
             SharedMemoryReadStream read${"varyingDataSizePipe", 65535, true};
-
+        
             std::string t1 = "abccde" + std::to_string(i);
             write$.write(t1);
 
@@ -63,8 +70,13 @@ const lest::test specification[] = {
             std::string dataString = read$.readString();
 
             EXPECT(t2 == dataString);
+
+            write$.close();
+            read$.close();
         }
-        std::cout << "4. std::string more/less: SUCCESS; 1000 runs" << std::endl;
+        std::cout << "4. std::string more/less: SUCCESS; 1000 runs"
+                  << std::endl;
+        
     },
 
     CASE("Write a lot") {
@@ -118,6 +130,9 @@ const lest::test specification[] = {
         std::cout
             << "6.2 status bit flips to zero when writing again: SUCCESS: 0b"
             << flags2 << std::endl;
+        
+        write$.close();
+        read$.close();
     },
 
     CASE("Can write and read a float* array") {
@@ -136,7 +151,7 @@ const lest::test specification[] = {
 
       write$.write(numbers, 72);
 
-      float* numbersReadPtr = read$.readFloat();
+      float* numbersReadPtr = read$.readFloatArray();
 
       EXPECT(numbers[0] == numbersReadPtr[0]);
       EXPECT(numbers[1] == numbersReadPtr[1]);
@@ -146,7 +161,52 @@ const lest::test specification[] = {
 
       std::cout << "6. float[72]: SUCCESS" << std::endl;
 
-      delete [] numbersReadPtr;
+      delete[] numbersReadPtr;
+      write$.close();
+      read$.close();
+    },
+
+    CASE("Can write and read a float* array") {
+
+      double numbers[72] = {
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+          1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
+          3.483045044,   6.14848338383, 7.3293840293, 8.4234234,
+      };
+
+      SharedMemoryWriteStream write${"numberPipe", 65535, true};
+      SharedMemoryReadStream read${"numberPipe", 65535, true};
+
+      write$.write(numbers, 72);
+
+      double* numbersReadPtr = read$.readDoubleArray();
+
+      EXPECT(numbers[0] == numbersReadPtr[0]);
+      EXPECT(numbers[1] == numbersReadPtr[1]);
+      EXPECT(numbers[2] == numbersReadPtr[2]);
+      EXPECT(numbers[3] == numbersReadPtr[3]);
+      EXPECT(numbers[71] == numbersReadPtr[71]);
+
+      std::cout << "7. double[72]: SUCCESS" << std::endl;
+
+      delete[] numbersReadPtr;
+      write$.close();
+      read$.close();
     },
 };
 

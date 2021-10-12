@@ -1,6 +1,6 @@
 # `libsharedmemory`
 
-`libsharedmemory` is a small C++11 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated host OS processes. It also helps inter-connecting modules of applications that are implemented in different programming languages. It allows for simple read/write data transfer using single, indexed memory address access and also using array-types like `std::string`, `float*`.
+`libsharedmemory` is a small C++11 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated host OS processes. It also helps inter-connecting modules of applications that are implemented in different programming languages. It allows for simple read/write data transfer using single, indexed memory address access and also using array-types like `std::string`, `float*`, `double*`.
 
 <img src="screenshot.png" width="350px" />
 
@@ -50,6 +50,7 @@ in your projects root directory. Managing third party code becomes obsolete at a
 `libsharedmemory` does only support the following datatypes (array-like):
 - `std::string`
 - `float*`
+- `double*`
 - to be continued
 
 Single value access via `.data()[index]` API:
@@ -71,7 +72,7 @@ When writing data into a named shared memory segment, `libsharedmemory`
 does write 5 bytes of meta information:
 
 - `flags` (`char`) is a bitmask that indicates data change (via an odd/even bit flip) as well as the data type transferred (1 byte)
-- `size` (`std::size_t`) indicates the buffer size in bytes (4 bytes)
+- `size` (`int`) indicates the buffer size in bytes (4 bytes)
 
 Therefore the binary memory layout is:
 `|flags|size|data|`
@@ -82,6 +83,7 @@ enum DataType {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
   kMemoryTypeFloat = 4,
+  kMemoryTypeDouble = 8,
 };
 ```
 
@@ -113,6 +115,5 @@ to verify the correct function of the implementation on your machine:
 
 ## Roadmap
 
-1) Support for `float32*`, `float64*`, vector data types (without the vector container, `vec.data()`)
-2) Windows shared memory persistency support
-3) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
+1) Windows shared memory persistency support
+2) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
