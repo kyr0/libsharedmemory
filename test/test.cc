@@ -108,6 +108,8 @@ const lest::test specification[] = {
 
         char flagsData = read$.readFlags();
 
+        EXPECT(read$.readLength(kMemoryTypeString) == 4);
+
         std::bitset<8> flags(flagsData);
 
         EXPECT((flagsData & kMemoryTypeString));
@@ -151,6 +153,8 @@ const lest::test specification[] = {
 
       write$.write(numbers, 72);
 
+      EXPECT(read$.readLength(kMemoryTypeFloat) == 72);
+
       float* numbersReadPtr = read$.readFloatArray();
 
       EXPECT(numbers[0] == numbersReadPtr[0]);
@@ -193,6 +197,8 @@ const lest::test specification[] = {
       SharedMemoryReadStream read${"numberPipe", 65535, true};
 
       write$.write(numbers, 72);
+
+      EXPECT(read$.readLength(kMemoryTypeDouble) == 72);
 
       double* numbersReadPtr = read$.readDoubleArray();
 

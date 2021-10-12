@@ -34,14 +34,12 @@ enum DataType {
   kMemoryTypeString = 2,
   kMemoryTypeFloat = 4,
   kMemoryTypeDouble = 8,
-  kMemoryTypeInt = 16,
-  kMemoryTypeLong = 32,
-  kMemoryTypeChar = 64,
 };
 
 // byte sizes of memory layout
 const size_t bufferSizeSize = 4; // size_t takes 4 bytes
 const size_t sizeOfOneFloat = 4; // float takes 4 bytes
+const size_t sizeOfOneChar = 1; // char takes 1 byte
 const size_t sizeOfOneDouble = 8; // double takes 8 bytes
 const size_t flagSize = 1; // char takes 1 byte
 
@@ -263,34 +261,54 @@ public:
       return memory[0];
     }
 
-    /**
-     * @brief Returns a float* read from shared memory
-     * Caller has the obligation to call delete [] on the returning float*.
-     * 
-     * @return float* 
-     */
-    inline float* readFloatArray() {
-        void *memory = _memory.data();
-        int* intMemory = (int*) memory; 
-        float* typedMemory = (float*) memory; 
+    inline void close() { _memory.close(); }
 
-        // define value to allocate 4 byte for the size_t
+
+    inline size_t readSize(char dataType) {
+        void *memory = _memory.data();
         std::size_t size = 0;
 
-        // copy size data to size variable
-        std::memcpy(&size,  &intMemory[flagSize], bufferSizeSize);
+        // TODO(kyr0): should be clarified why we need to use size_t there
+        // for the size to be received correctly, but in float, we need int
+        // Might be prone to undefined behaviour; should be tested
+        // with various compilers; otherwise use memcpy() for the size
+        // and align the memory with one cast.
 
-        // allocating memory on heap (this might leak)
-        float *data = new float[size / sizeOfOneFloat]();
+        if (dataType & kMemoryTypeDouble) {
+            size_t *intMemory = (size_t *)memory;
+            // copy size data to size variable
+            std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
+        }
 
-        // copy to data buffer
-        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
-        
-        return data;
+        if (dataType & kMemoryTypeFloat) {
+            int* intMemory = (int*) memory; 
+            // copy size data to size variable
+            std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
+        }
+
+        if (dataType & kMemoryTypeString) {
+            char* charMemory = (char*) memory; 
+            // copy size data to size variable
+            std::memcpy(&size, &charMemory[flagSize], bufferSizeSize);
+        }
+        return size;
     }
 
-    inline void close() {
-      _memory.close();
+    inline size_t readLength(char dataType) {
+      size_t size = readSize(dataType);
+
+      if (dataType & kMemoryTypeString) {
+        return size / sizeOfOneChar;
+      }
+            
+      if (dataType & kMemoryTypeFloat) {
+        return size / sizeOfOneFloat;
+      }
+            
+      if (dataType & kMemoryTypeDouble) {
+        return size / sizeOfOneDouble;
+      }
+      return 0;
     }
 
     /**
@@ -302,19 +320,8 @@ public:
     // TODO: might wanna use templated functions here like: <T> readNumericArray()
     inline double* readDoubleArray() {
         void *memory = _memory.data();
-        // TODO(kyr0): should be clarified why we need to use size_t there
-        // for the size to be received correctly, but in float, we need int
-        // Might be prone to undefined behaviour; should be tested
-        // with various compilers; otherwise use memcpy() for the size
-        // and align the memory with one cast.
-        size_t* intMemory = (size_t*) memory; 
+        std::size_t size = readSize(kMemoryTypeDouble);
         double* typedMemory = (double*) memory; 
-
-        // define value to allocate 4 byte for the size_t
-        std::size_t size = 0;
-
-        // copy size data to size variable
-        std::memcpy(&size,  &intMemory[flagSize], bufferSizeSize);
 
         // allocating memory on heap (this might leak)
         double *data = new double[size / sizeOfOneDouble]();
@@ -325,13 +332,31 @@ public:
         return data;
     }
 
+    /**
+     * @brief Returns a float* read from shared memory
+     * Caller has the obligation to call delete [] on the returning float*.
+     * 
+     * @return float* 
+     */
+    inline float* readFloatArray() {
+        void *memory = _memory.data();
+        float *typedMemory = (float *)memory;
+        
+        std::size_t size = readSize(kMemoryTypeFloat);
+
+        // allocating memory on heap (this might leak)
+        float *data = new float[size / sizeOfOneFloat]();
+
+        // copy to data buffer
+        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
+        
+        return data;
+    }
+
     inline std::string readString() {
         char* memory = (char*) _memory.data();
 
-        std::size_t size = 0;
-
-        // copy buffer size
-        std::memcpy(&size, &memory[flagSize], bufferSizeSize);
+        std::size_t size = readSize(kMemoryTypeString);
 
         // create a string that copies the data from memory
         std::string data =
