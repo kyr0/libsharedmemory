@@ -248,8 +248,8 @@ inline Memory::~Memory() {
 class SharedMemoryReadStream {
 public:
 
-    explicit SharedMemoryReadStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
-        _memory(name, bufferSize, isPersistent)/*, _isInOddWriteMode(false)*/ {
+    SharedMemoryReadStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
+        _memory(name, bufferSize, isPersistent) {
 
         if (_memory.open() != kOK) {
             throw "Shared memory segment could not be opened.";
@@ -372,7 +372,7 @@ private:
 class SharedMemoryWriteStream {
 public:
 
-    explicit SharedMemoryWriteStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
+    SharedMemoryWriteStream(const std::string name, const std::size_t bufferSize, const bool isPersistent): 
         _memory(name, bufferSize, isPersistent) {
 
         if (_memory.create() != kOK) {
