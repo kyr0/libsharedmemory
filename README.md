@@ -51,20 +51,21 @@ in your projects root directory. Managing third party code becomes obsolete at a
 - `std::string`
 - `float*`
 - `double*`
-- to be continued
 
 Single value access via `.data()[index]` API:
-- all data types C++ supports
+- all scalar datatypes supported in C/C++
 
-There is no explicit handling of endinanness. Memory interpretation 
-issues may happen when transferring the memory between different machines/vm.
+- This library doesn't care for endinanness. This should be naturally fine
+because shared memory shouldn't be shared between different machine 
+architectures. However, if you plan to copy the shared buffer onto a 
+network layer prototcol, make sure to add an endianess indication bit.
 
-Although the binary memory layout should give you no headache
+- Although the binary memory layout should give you no headache
 when compiling/linking using different compilers, 
 the behavior is undefined.
 
-On Windows: Atm no support for shared memory persistency after the process 
-that writes the memory quits.
+- At the time of writing, there is no support for shared memory persistency
+on Windows. Shared memory is lost after the writing process is killed.
 
 ## Memory layout
 

@@ -112,12 +112,12 @@ const lest::test specification[] = {
 
         std::bitset<8> flags(flagsData);
 
-        EXPECT((flagsData & kMemoryTypeString));
+        EXPECT(!!(flagsData & kMemoryTypeString));
 
         std::cout << "6. status flag shows string data type flag: SUCCESS: 0b"
                   << flags << std::endl;
         
-        EXPECT((flagsData & kMemoryChanged));
+        EXPECT(!!(flagsData & kMemoryChanged));
 
         std::cout << "6.1 status flag has the change bit set: SUCCESS: 0b"
                   << flags << std::endl;
@@ -127,11 +127,21 @@ const lest::test specification[] = {
         char flagsData2 = read$.readFlags();
         std::bitset<8> flags2(flagsData2);
 
-        EXPECT((flagsData2 & ~kMemoryChanged));
+        EXPECT(!!(flagsData2 & ~kMemoryChanged));
+
+        write$.write("foo!1");
+
+        char flagsData3 = read$.readFlags();
+        std::bitset<8> flags3(flagsData3);
+        EXPECT(!!(flagsData3 & kMemoryChanged));
 
         std::cout
             << "6.2 status bit flips to zero when writing again: SUCCESS: 0b"
             << flags2 << std::endl;
+        
+        std::cout
+            << "6.3 status bit flips to one when writing again: SUCCESS: 0b"
+            << flags3 << std::endl;
         
         write$.close();
         read$.close();
@@ -161,8 +171,8 @@ const lest::test specification[] = {
       std::cout
           << "Flags for float* read: 0b"
           << flags << std::endl;
-      EXPECT((flagsData & kMemoryTypeFloat));
-      EXPECT((flagsData & kMemoryChanged));
+      EXPECT(!!(flagsData & kMemoryTypeFloat));
+      EXPECT(!!(flagsData & kMemoryChanged));
       
       float* numbersReadPtr = read$.readFloatArray();
 
@@ -172,7 +182,29 @@ const lest::test specification[] = {
       EXPECT(numbers[3] == numbersReadPtr[3]);
       EXPECT(numbers[71] == numbersReadPtr[71]);
 
-      std::cout << "6. float[72]: SUCCESS" << std::endl;
+      std::cout << "7. float[72]: SUCCESS" << std::endl;
+      
+        write$.write(numbers, 72);
+
+        char flagsData2 = read$.readFlags();
+        std::bitset<8> flags2(flagsData2);
+
+        EXPECT(!!(flagsData2 & ~kMemoryChanged));
+
+        write$.write(numbers, 72);
+
+        char flagsData3 = read$.readFlags();
+        std::bitset<8> flags3(flagsData3);
+        EXPECT(!!(flagsData3 & kMemoryChanged));
+
+        std::cout
+            << "7.1 status bit flips to zero when writing again: SUCCESS: 0b"
+            << flags2 << std::endl;
+        
+        std::cout
+            << "7.2 status bit flips to one when writing again: SUCCESS: 0b"
+            << flags3 << std::endl;
+
 
       delete[] numbersReadPtr;
       write$.close();
@@ -215,8 +247,8 @@ const lest::test specification[] = {
       std::cout
           << "Flags for double* read: 0b"
           << flags << std::endl;
-      EXPECT((flagsData & kMemoryTypeDouble));
-      EXPECT((flagsData & kMemoryChanged));
+      EXPECT(!!(flagsData & kMemoryTypeDouble));
+      EXPECT(!!(flagsData & kMemoryChanged));
 
       double* numbersReadPtr = read$.readDoubleArray();
 
@@ -226,8 +258,28 @@ const lest::test specification[] = {
       EXPECT(numbers[3] == numbersReadPtr[3]);
       EXPECT(numbers[71] == numbersReadPtr[71]);
 
-      std::cout << "7. double[72]: SUCCESS" << std::endl;
+      std::cout << "8. double[72]: SUCCESS" << std::endl;
 
+        write$.write(numbers, 72);
+
+        char flagsData2 = read$.readFlags();
+        std::bitset<8> flags2(flagsData2);
+
+        EXPECT(!!(flagsData2 & ~kMemoryChanged));
+
+        write$.write(numbers, 72);
+
+        char flagsData3 = read$.readFlags();
+        std::bitset<8> flags3(flagsData3);
+        EXPECT(!!(flagsData3 & kMemoryChanged));
+
+        std::cout
+            << "8.1 status bit flips to zero when writing again: SUCCESS: 0b"
+            << flags2 << std::endl;
+        
+        std::cout
+            << "8.2 status bit flips to one when writing again: SUCCESS: 0b"
+            << flags3 << std::endl;
       delete[] numbersReadPtr;
       write$.close();
       read$.close();

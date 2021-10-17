@@ -403,7 +403,7 @@ public:
         char* memory = (char*) _memory.data();
 
         // 1) copy change flag into buffer for change detection
-        char flags = getWriteFlags(kMemoryTypeString, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeString, ((char*) _memory.data())[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
@@ -422,7 +422,7 @@ public:
     inline void write(float* data, std::size_t length) {
         float* memory = (float*) _memory.data();
 
-        char flags = getWriteFlags(kMemoryTypeFloat, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeFloat, ((char*) _memory.data())[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
@@ -436,7 +436,7 @@ public:
     inline void write(double* data, std::size_t length) {
         double* memory = (double*) _memory.data();
 
-        char flags = getWriteFlags(kMemoryTypeDouble, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeDouble, ((char*) _memory.data())[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
