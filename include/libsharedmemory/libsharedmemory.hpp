@@ -5,7 +5,7 @@
 #include <ostream>
 #define LIBSHAREDMEMORY_VERSION_MAJOR 0
 #define LIBSHAREDMEMORY_VERSION_MINOR 0
-#define LIBSHAREDMEMORY_VERSION_PATCH 3
+#define LIBSHAREDMEMORY_VERSION_PATCH 9
 
 #include <cstdint>
 #include <cstring>

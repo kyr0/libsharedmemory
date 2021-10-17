@@ -1,6 +1,6 @@
 {
   "name": "cpp_libsharedmemory",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "C++11 header-only library for using shared memory on Windows, Linux and macOS",
   "main": "include/libsharedmemory/libsharedmemory.hpp",
   "directories": {
