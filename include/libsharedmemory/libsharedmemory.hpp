@@ -257,7 +257,7 @@ public:
     }
 
     inline char readFlags() {
-      char *memory = (char*) _memory.data();
+      char* memory = (char*) _memory.data();
       return memory[0];
     }
 
@@ -403,7 +403,8 @@ public:
         char* memory = (char*) _memory.data();
 
         // 1) copy change flag into buffer for change detection
-        memory[0] = getWriteFlags(kMemoryTypeString, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeString, memory[0]);
+        std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = string.data();
@@ -421,7 +422,8 @@ public:
     inline void write(float* data, std::size_t length) {
         float* memory = (float*) _memory.data();
 
-        memory[0] = getWriteFlags(kMemoryTypeFloat, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeFloat, memory[0]);
+        std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const std::size_t bufferSize = length * sizeOfOneFloat;
@@ -434,7 +436,8 @@ public:
     inline void write(double* data, std::size_t length) {
         double* memory = (double*) _memory.data();
 
-        memory[0] = getWriteFlags(kMemoryTypeDouble, memory[0]);
+        char flags = getWriteFlags(kMemoryTypeDouble, memory[0]);
+        std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const std::size_t bufferSize = length * sizeOfOneDouble;

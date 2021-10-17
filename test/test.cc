@@ -154,7 +154,16 @@ const lest::test specification[] = {
       write$.write(numbers, 72);
 
       EXPECT(read$.readLength(kMemoryTypeFloat) == 72);
-
+      
+      char flagsData = read$.readFlags();
+      std::bitset<8> flags(flagsData);
+    
+      std::cout
+          << "Flags for float* read: 0b"
+          << flags << std::endl;
+      EXPECT((flagsData & kMemoryTypeFloat));
+      EXPECT((flagsData & kMemoryChanged));
+      
       float* numbersReadPtr = read$.readFloatArray();
 
       EXPECT(numbers[0] == numbersReadPtr[0]);
@@ -170,7 +179,7 @@ const lest::test specification[] = {
       read$.close();
     },
 
-    CASE("Can write and read a float* array") {
+    CASE("Can write and read a double* array") {
 
       double numbers[72] = {
           1.38038450934, 3.43723642783, 3.1438540345, 331.390696969,
@@ -199,6 +208,15 @@ const lest::test specification[] = {
       write$.write(numbers, 72);
 
       EXPECT(read$.readLength(kMemoryTypeDouble) == 72);
+
+      char flagsData = read$.readFlags();
+      std::bitset<8> flags(flagsData);
+    
+      std::cout
+          << "Flags for double* read: 0b"
+          << flags << std::endl;
+      EXPECT((flagsData & kMemoryTypeDouble));
+      EXPECT((flagsData & kMemoryChanged));
 
       double* numbersReadPtr = read$.readDoubleArray();
 
