@@ -23,7 +23,7 @@ write$.write(dataToTransfer);
 // reading the string from shared memory
 // you can run this in another process, thread,
 // even in another app written in another programming language
-std::string dataString = read$.read();
+std::string dataString = read$.readString();
 
 std::cout << "UTF8 string written and read" << dataString << std::endl;
 ```
