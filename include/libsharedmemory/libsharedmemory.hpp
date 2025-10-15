@@ -101,7 +101,7 @@ private:
 
 #include <io.h>  // CreateFileMappingA, OpenFileMappingA, etc.
 
-Memory::Memory(const std::string path, const std::size_t size, const bool persist) : _path(path), _size(size), _persist(persist)
+Memory::Memory(const std::string& path, std::size_t size, bool persist) : _path(path), _size(size), _persist(persist)
 {
 }
 
@@ -154,7 +154,7 @@ Error Memory::createOrOpen(const bool create)
     return kOK;
 }
 
-void Memory::destroy()
+void Memory::destroy() const
 {
     // TODO: Windows needs priviledges to define a shared memory (file mapping)
     // OBJ_PERMANENT; furthermore, ZwCreateSection would need to be used.
