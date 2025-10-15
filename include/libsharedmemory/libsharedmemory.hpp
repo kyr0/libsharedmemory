@@ -1,10 +1,10 @@
 #pragma once
 
-#include <ostream>
 #define LIBSHAREDMEMORY_VERSION_MAJOR 0
 #define LIBSHAREDMEMORY_VERSION_MINOR 0
 #define LIBSHAREDMEMORY_VERSION_PATCH 9
 
+#include <ostream>
 #include <cstring>
 #include <string>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
