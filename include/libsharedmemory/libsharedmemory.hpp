@@ -8,6 +8,7 @@
 #include <cstring>
 #include <string>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
+#include <cstdint> // intptr_t, uint8_t, etc.
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
