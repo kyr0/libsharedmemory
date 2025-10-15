@@ -83,8 +83,10 @@ jobs:
           git fetch --tags --force
           if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
             echo "exists=true" >>"$GITHUB_OUTPUT"
+            exit 0
           else
             echo "exists=false" >>"$GITHUB_OUTPUT"
+            exit 1
           fi
 
       - name: Generate release notes
