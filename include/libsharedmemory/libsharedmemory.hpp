@@ -9,6 +9,7 @@
 #include <string>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 #include <cstdint> // intptr_t, uint8_t, etc.
+#include <limits>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -36,7 +37,7 @@ enum DataType
 };
 
 // byte sizes of memory layout
-constexpr size_t bufferSizeSize = 4; // size_t takes 4 bytes
+constexpr size_t bufferSizeSize = 4; // store buffer length as 32-bit value
 constexpr size_t sizeOfOneFloat = 4; // float takes 4 bytes
 constexpr size_t sizeOfOneChar = 1; // char takes 1 byte
 constexpr size_t sizeOfOneDouble = 8; // double takes 8 bytes
@@ -90,7 +91,9 @@ private:
     std::size_t _size = 0;
     bool _persist = true;
 #if defined(_WIN32)
-    HANDLE _handle;
+    HANDLE _handle = nullptr;
+    HANDLE _fileHandle = INVALID_HANDLE_VALUE;
+    std::string _persistFilePath;
 #else
     int _fd = -1;
 #endif
@@ -101,54 +104,151 @@ private:
 
 #include <io.h>  // CreateFileMappingA, OpenFileMappingA, etc.
 
+namespace lsm_windows_detail
+{
+    inline std::string sanitize_name(const std::string& name)
+    {
+        std::string sanitized = name;
+        const std::string invalid = "\\/:*?\"<>|";
+        for (size_t idx = 0; idx < sanitized.size(); ++idx)
+        {
+            const char ch = sanitized[idx];
+            if (ch < 32 || invalid.find(ch) != std::string::npos)
+            {
+                sanitized[idx] = '_';
+            }
+        }
+        return sanitized;
+    }
+
+    inline std::string persistence_file_path(const std::string& name)
+    {
+        char buffer[MAX_PATH] = {0};
+        const DWORD pathLength = GetTempPathA(static_cast<DWORD>(sizeof(buffer)), buffer);
+        std::string basePath(buffer, buffer + pathLength);
+        if (!basePath.empty())
+        {
+            const char last = basePath[basePath.size() - 1];
+            if (last != '\\' && last != '/')
+            {
+                basePath.push_back('\\');
+            }
+        }
+        basePath += "lsm_";
+        basePath += sanitize_name(name);
+        basePath += ".shm";
+        return basePath;
+    }
+}
+
 Memory::Memory(const std::string& path, std::size_t size, bool persist) : _path(path), _size(size), _persist(persist)
 {
+    if (_persist)
+    {
+        _persistFilePath = lsm_windows_detail::persistence_file_path(_path);
+    }
 }
 
 Error Memory::createOrOpen(const bool create)
 {
-    if (create)
-    {
-        DWORD size_high_order = 0;
-        DWORD size_low_order = static_cast<DWORD>(_size);
+    const DWORD size_high_order = static_cast<DWORD>((static_cast<unsigned long long>(_size) >> 32) & 0xFFFFFFFFull);
+    const DWORD size_low_order = static_cast<DWORD>(static_cast<unsigned long long>(_size) & 0xFFFFFFFFull);
 
-        _handle = CreateFileMappingA(INVALID_HANDLE_VALUE,  // use paging file
-                                        NULL,                  // default security
-                                        PAGE_READWRITE,        // read/write access
-                                        size_high_order, size_low_order,
-                                        _path.c_str()  // name of mapping object
-        );
+    if (_persist)
+    {
+        if (_persistFilePath.empty())
+        {
+            _persistFilePath = lsm_windows_detail::persistence_file_path(_path);
+        }
+
+        const DWORD disposition = create ? CREATE_ALWAYS : OPEN_EXISTING;
+        HANDLE fileHandle = CreateFileA(_persistFilePath.c_str(),
+                                        GENERIC_READ | GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                        NULL,
+                                        disposition,
+                                        FILE_ATTRIBUTE_NORMAL,
+                                        NULL);
+
+        if (fileHandle == INVALID_HANDLE_VALUE)
+        {
+            return create ? kErrorCreationFailed : kErrorOpeningFailed;
+        }
+
+        LARGE_INTEGER requiredSize;
+        requiredSize.QuadPart = static_cast<LONGLONG>(_size);
+
+        bool resizeFile = create;
+        if (!create)
+        {
+            LARGE_INTEGER currentSize;
+            if (GetFileSizeEx(fileHandle, &currentSize))
+            {
+                resizeFile = currentSize.QuadPart < requiredSize.QuadPart;
+            }
+        }
+
+        if (resizeFile)
+        {
+            if (!SetFilePointerEx(fileHandle, requiredSize, NULL, FILE_BEGIN) || !SetEndOfFile(fileHandle))
+            {
+                CloseHandle(fileHandle);
+                return kErrorCreationFailed;
+            }
+        }
+
+        _fileHandle = fileHandle;
+
+        _handle = CreateFileMappingA(_fileHandle,
+                                     NULL,
+                                     PAGE_READWRITE,
+                                     size_high_order,
+                                     size_low_order,
+                                     NULL);
 
         if (!_handle)
         {
-            return kErrorCreationFailed;
+            CloseHandle(_fileHandle);
+            _fileHandle = INVALID_HANDLE_VALUE;
+            return kErrorMappingFailed;
         }
     }
     else
     {
-        _handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, // read/write access
-                                     FALSE,         // do not inherit the name
-                                     _path.c_str()  // name of mapping object
-        );
-
-        // TODO: Windows has no default support for shared memory persistence
-        // see: destroy() to implement that
-
-        if (!_handle)
+        if (create)
         {
-            return kErrorOpeningFailed;
+            _handle = CreateFileMappingA(INVALID_HANDLE_VALUE,  // use paging file
+                                         NULL,                  // default security
+                                         PAGE_READWRITE,        // read/write access
+                                         size_high_order, size_low_order,
+                                         _path.c_str());        // name of mapping object
+
+            if (!_handle)
+            {
+                return kErrorCreationFailed;
+            }
+        }
+        else
+        {
+            _handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, // read/write access
+                                       FALSE,               // do not inherit the name
+                                       _path.c_str());      // name of mapping object
+
+            if (!_handle)
+            {
+                return kErrorOpeningFailed;
+            }
         }
     }
 
-    // TODO: might want to use GetWriteWatch to get called whenever
-    // the memory section changes
-    // https://docs.microsoft.com/de-de/windows/win32/api/memoryapi/nf-memoryapi-getwritewatch?redirectedfrom=MSDN
+    // Change detection relies on explicit flags to keep the implementation lightweight
 
     const DWORD access = FILE_MAP_ALL_ACCESS; // always request read/write view
     _data = MapViewOfFile(_handle, access, 0, 0, _size);
 
     if (!_data)
     {
+        close();
         return kErrorMappingFailed;
     }
     return kOK;
@@ -156,13 +256,15 @@ Error Memory::createOrOpen(const bool create)
 
 void Memory::destroy() const
 {
-    // TODO: Windows needs priviledges to define a shared memory (file mapping)
-    // OBJ_PERMANENT; furthermore, ZwCreateSection would need to be used.
-    // Instead of doing this; saving a file here (by name, temp dir)
-    // and reading memory from file in createOrOpen seems more suitable.
-    // Especially, because files can be removed on reboot using:
-    // MoveFileEx() with the MOVEFILE_DELAY_UNTIL_REBOOT flag and lpNewFileName
-    // set to NULL.
+    if (_persistFilePath.empty())
+    {
+        return;
+    }
+
+    if (!DeleteFileA(_persistFilePath.c_str()))
+    {
+        MoveFileExA(_persistFilePath.c_str(), NULL, MOVEFILE_DELAY_UNTIL_REBOOT);
+    }
 }
 
 void Memory::close()
@@ -172,7 +274,16 @@ void Memory::close()
         UnmapViewOfFile(_data);
         _data = nullptr;
     }
-    CloseHandle(_handle);
+    if (_handle)
+    {
+        CloseHandle(_handle);
+        _handle = nullptr;
+    }
+    if (_fileHandle != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(_fileHandle);
+        _fileHandle = INVALID_HANDLE_VALUE;
+    }
 }
 
 Memory::~Memory()
@@ -316,7 +427,7 @@ public:
 
     char readFlags() const
     {
-        const auto memory = static_cast<char*>(_memory.data());
+        const auto memory = static_cast<const char*>(_memory.data());
         return memory[0];
     }
 
@@ -325,38 +436,12 @@ public:
         _memory.close();
     }
 
-    size_t readSize(const char dataType) const
+    size_t readSize(const char /*dataType*/) const
     {
-        void *memory = _memory.data();
-        std::size_t size = 0;
-
-        // TODO(kyr0): should be clarified why we need to use size_t there
-        // for the size to be received correctly, but in float, we need int
-        // Might be prone to undefined behaviour; should be tested
-        // with various compilers; otherwise use memcpy() for the size
-        // and align the memory with one cast.
-
-        if (dataType & kMemoryTypeDouble)
-        {
-            const auto *intMemory = static_cast<size_t*>(memory);
-            // copy size data to size variable
-            std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
-        }
-
-        if (dataType & kMemoryTypeFloat)
-        {
-            const auto intMemory = static_cast<int*>(memory);
-            // copy size data to size variable
-            std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
-        }
-
-        if (dataType & kMemoryTypeString)
-        {
-            const auto charMemory = static_cast<char*>(memory);
-            // copy size data to size variable
-            std::memcpy(&size, &charMemory[flagSize], bufferSizeSize);
-        }
-        return size;
+        const auto memory = static_cast<const char*>(_memory.data());
+        std::uint32_t storedSize = 0;
+        std::memcpy(&storedSize, &memory[flagSize], bufferSizeSize);
+        return static_cast<std::size_t>(storedSize);
     }
 
     size_t readLength(const char dataType) const
@@ -386,20 +471,9 @@ public:
      *
      * @return float*
      */
-    // TODO: might wanna use templated functions here like: <T> readNumericArray()
     double* readDoubleArray() const
     {
-        void *memory = _memory.data();
-        const std::size_t size = readSize(kMemoryTypeDouble);
-        const auto typedMemory = static_cast<double*>(memory);
-
-        // allocating memory on heap (this might leak)
-        const auto data = new double[size / sizeOfOneDouble]();
-
-        // copy to data buffer
-        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
-
-        return data;
+        return readNumericArray<double>(kMemoryTypeDouble, sizeOfOneDouble);
     }
 
     /**
@@ -410,23 +484,12 @@ public:
      */
     float* readFloatArray() const
     {
-        void *memory = _memory.data();
-        const auto typedMemory = static_cast<float*>(memory);
-
-        const std::size_t size = readSize(kMemoryTypeFloat);
-
-        // allocating memory on heap (this might leak)
-        const auto data = new float[size / sizeOfOneFloat]();
-
-        // copy to data buffer
-        std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
-
-        return data;
+        return readNumericArray<float>(kMemoryTypeFloat, sizeOfOneFloat);
     }
 
     std::string readString() const
     {
-        const auto memory = static_cast<char*>(_memory.data());
+        const auto memory = static_cast<const char*>(_memory.data());
 
         const std::size_t size = readSize(kMemoryTypeString);
 
@@ -437,6 +500,19 @@ public:
     }
 
 private:
+    template <typename T>
+    T* readNumericArray(const char typeFlag, const std::size_t elementSize) const
+    {
+        const auto memory = static_cast<const char*>(_memory.data());
+        const std::size_t byteSize = readSize(typeFlag);
+        const std::size_t length = elementSize == 0 ? 0 : byteSize / elementSize;
+
+    auto data = new T[length]();
+        std::memcpy(data, &memory[flagSize + bufferSizeSize], byteSize);
+
+        return data;
+    }
+
     Memory _memory;
 };
 
@@ -479,13 +555,18 @@ public:
     {
         const auto memory = static_cast<char*>(_memory.data());
 
+        if (string.size() > std::numeric_limits<std::uint32_t>::max())
+        {
+            throw "String payload exceeds maximum shared memory size.";
+        }
+
         // 1) copy change flag into buffer for change detection
-        const char flags = getWriteFlags(kMemoryTypeString, static_cast<char*>(_memory.data())[0]);
+        const char flags = getWriteFlags(kMemoryTypeString, memory[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = string.data();
-        const std::size_t bufferSize = string.size();
+        const std::uint32_t bufferSize = static_cast<std::uint32_t>(string.size());
 
         // write data
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
@@ -494,37 +575,14 @@ public:
         std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
     }
 
-    // TODO: might wanna use template function here for numeric arrays,
-    // like void writeNumericArray(<T*> data, std::size_t length)
     void write(const float* data, const std::size_t length) const
     {
-        const auto memory = static_cast<float*>(_memory.data());
-
-        const char flags = getWriteFlags(kMemoryTypeFloat, static_cast<char*>(_memory.data())[0]);
-        std::memcpy(&memory[0], &flags, flagSize);
-
-        // 2) copy buffer size into buffer (meta data for deserializing)
-        const std::size_t bufferSize = length * sizeOfOneFloat;
-        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-
-        // 3) copy float* into memory buffer
-        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
+        writeNumericArray<float>(data, length, kMemoryTypeFloat);
     }
 
     void write(const double* data, const std::size_t length) const
     {
-        const auto memory = static_cast<double*>(_memory.data());
-
-        const char flags = getWriteFlags(kMemoryTypeDouble, static_cast<char*>(_memory.data())[0]);
-        std::memcpy(&memory[0], &flags, flagSize);
-
-        // 2) copy buffer size into buffer (meta data for deserializing)
-        const std::size_t bufferSize = length * sizeOfOneDouble;
-
-        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-
-        // 3) copy double* into memory buffer
-        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
+        writeNumericArray<double>(data, length, kMemoryTypeDouble);
     }
 
     void destroy() const
@@ -533,6 +591,24 @@ public:
     }
 
 private:
+    template <typename T>
+    void writeNumericArray(const T* data, const std::size_t length, const char typeFlag) const
+    {
+        if (length > 0 && length > (std::numeric_limits<std::uint32_t>::max() / sizeof(T)))
+        {
+            throw "Numeric payload exceeds maximum shared memory size.";
+        }
+
+        const auto memory = static_cast<char*>(_memory.data());
+
+        const char flags = getWriteFlags(typeFlag, memory[0]);
+        std::memcpy(&memory[0], &flags, flagSize);
+
+        const std::uint32_t bufferSize = static_cast<std::uint32_t>(length * sizeof(T));
+        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
+        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
+    }
+
     Memory _memory;
 };
 
