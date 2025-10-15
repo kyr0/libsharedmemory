@@ -11,3 +11,9 @@ elseif(CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
 endif()
 
 add_test(NAME test COMMAND lsm_test)
+
+add_custom_target(run_test
+        COMMAND lsm_test
+        DEPENDS lsm_test
+        WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
+)
