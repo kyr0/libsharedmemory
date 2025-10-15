@@ -4,6 +4,7 @@
 #include <ostream>
 #include <string>
 #include <bitset>
+#include <cstdint>
 
 using namespace std;
 using namespace lsm;
@@ -111,7 +112,7 @@ const lest::test specification[] =
 
         char flagsData = read$.readFlags();
 
-        EXPECT(read$.readLength(kMemoryTypeString) == 4);
+        EXPECT(read$.readLength(kMemoryTypeString) == 4UL);
 
         std::bitset<8> flags(flagsData);
 
@@ -167,7 +168,7 @@ const lest::test specification[] =
 
         write$.write(numbers, 72);
 
-        EXPECT(read$.readLength(kMemoryTypeFloat) == 72);
+        EXPECT(read$.readLength(kMemoryTypeFloat) == 72UL);
 
         char flagsData = read$.readFlags();
         std::bitset<8> flags(flagsData);
@@ -243,7 +244,7 @@ const lest::test specification[] =
 
         write$.write(numbers, 72);
 
-        EXPECT(read$.readLength(kMemoryTypeDouble) == 72);
+        EXPECT(read$.readLength(kMemoryTypeDouble) == 72UL);
 
         char flagsData = read$.readFlags();
         std::bitset<8> flags(flagsData);
