@@ -39,3 +39,64 @@ jobs:
 
       - name: Test
         run: cmake --build build --config Release --target run_test
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine library version
+        id: version
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          header = Path('include/libsharedmemory/libsharedmemory.hpp').read_text(encoding='utf-8')
+
+          def macro(name: str) -> str:
+              match = re.search(rf'#define\s+{name}\s+(\d+)', header)
+              if not match:
+                  raise SystemExit(f'Macro {name} not found in header')
+              return match.group(1)
+
+          major = macro('LIBSHAREDMEMORY_VERSION_MAJOR')
+          minor = macro('LIBSHAREDMEMORY_VERSION_MINOR')
+          patch = macro('LIBSHAREDMEMORY_VERSION_PATCH')
+          version = f'v{major}.{minor}.{patch}'
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\n')
+          PY
+
+      - name: Check if tag already exists
+        id: tag_check
+        run: |
+          git fetch --tags --force
+          if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub release
+        if: steps.tag_check.outputs.exists == 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.version.outputs.version }}
+          commitish: ${{ github.sha }}
+          body: |
+            Automated release for version ${{ steps.version.outputs.version }}.
+          draft: false
+          prerelease: false
