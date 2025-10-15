@@ -92,24 +92,6 @@ enum DataType {
 to indicate data change. Continuous data reader will thus be able 
 to catch every data change. 
 
-## Build
-
-This project is meant to be built with `cmake` and `clang`.
-However, it _should_ also build with MSVC and GCC.
-
-```sh
-./build.sh
-```
-
-## Test
-
-Test executables are built automatically and can be executed
-to verify the correct function of the implementation on your machine:
-
-```sh
-./test.sh
-```
-
 ## License
 
 `libsharedmemory` is released under the MIT license, see the `LICENSE` file.
