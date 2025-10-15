@@ -87,6 +87,51 @@ jobs:
             echo "exists=false" >>"$GITHUB_OUTPUT"
           fi
 
+      - name: Generate release notes
+        if: steps.tag_check.outputs.exists == 'false'
+        id: notes
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+
+          def git_output(args):
+              result = subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+              return result.stdout.strip()
+
+          last_tag = ""
+          try:
+              last_tag = git_output(["git", "describe", "--tags", "--abbrev=0"])
+          except subprocess.CalledProcessError:
+              last_tag = ""
+
+          if last_tag:
+              log_range = f"{last_tag}..HEAD"
+          else:
+              log_range = "HEAD"
+
+          try:
+              notes = git_output(["git", "log", log_range, "--pretty=format:- %s (%h)"])
+          except subprocess.CalledProcessError:
+              notes = ""
+
+          notes = notes.strip()
+          if not notes:
+              notes = "No commits since previous release."
+
+          if last_tag:
+              header = f"Changes since {last_tag}:"
+          else:
+              header = "Changes since repository start:"
+
+          body = f"{header}\n\n{notes}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("body<<EOF\n")
+              fh.write(body)
+              fh.write("\nEOF\n")
+          PY
+
       - name: Create GitHub release
         if: steps.tag_check.outputs.exists == 'false'
         uses: actions/create-release@v1
@@ -96,7 +141,6 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           release_name: ${{ steps.version.outputs.version }}
           commitish: ${{ github.sha }}
-          body: |
-            Automated release for version ${{ steps.version.outputs.version }}.
+          body: ${{ steps.notes.outputs.body }}
           draft: false
           prerelease: false
