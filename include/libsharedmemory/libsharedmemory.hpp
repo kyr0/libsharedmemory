@@ -15,16 +15,19 @@
 #undef WIN32_LEAN_AND_MEAN
 #endif
 
-namespace lsm {
+namespace lsm
+{
 
-enum Error {
+enum Error
+{
   kOK = 0,
   kErrorCreationFailed = 100,
   kErrorMappingFailed = 110,
   kErrorOpeningFailed = 120,
 };
 
-enum DataType {
+enum DataType
+{
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
   kMemoryTypeFloat = 4,
@@ -38,23 +41,39 @@ constexpr size_t sizeOfOneChar = 1; // char takes 1 byte
 constexpr size_t sizeOfOneDouble = 8; // double takes 8 bytes
 constexpr size_t flagSize = 1; // char takes 1 byte
 
-class Memory {
+class Memory
+{
 public:
     // path should only contain alpha-numeric characters, and is normalized
     // on linux/macOS.
     explicit Memory(const std::string& path, std::size_t size, bool persist);
 
     // create a shared memory area and open it for writing
-    Error create() { return createOrOpen(true); };
+    Error create()
+    {
+        return createOrOpen(true);
+    }
 
     // open an existing shared memory for reading
-    Error open() { return createOrOpen(false); };
+    Error open()
+    {
+        return createOrOpen(false);
+    }
 
-    std::size_t size() const { return _size; };
+    std::size_t size() const
+    {
+        return _size;
+    }
 
-    const std::string &path() { return _path; }
+    const std::string &path()
+    {
+        return _path;
+    }
 
-    void *data() const { return _data; }
+    void *data() const
+    {
+        return _data;
+    }
 
     void destroy() const;
 
@@ -81,10 +100,14 @@ private:
 
 #include <io.h>  // CreateFileMappingA, OpenFileMappingA, etc.
 
-Memory::Memory(const std::string path, const std::size_t size, const bool persist) : _path(path), _size(size), _persist(persist) {};
+Memory::Memory(const std::string path, const std::size_t size, const bool persist) : _path(path), _size(size), _persist(persist)
+{
+}
 
-Error Memory::createOrOpen(const bool create) {
-    if (create) {
+Error Memory::createOrOpen(const bool create)
+{
+    if (create)
+    {
         DWORD size_high_order = 0;
         DWORD size_low_order = static_cast<DWORD>(_size);
 
@@ -95,19 +118,23 @@ Error Memory::createOrOpen(const bool create) {
                                         _path.c_str()  // name of mapping object
         );
 
-        if (!_handle) {
+        if (!_handle)
+        {
             return kErrorCreationFailed;
         }
-    } else {
-    _handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, // read/write access
-                                 FALSE,         // do not inherit the name
-                                 _path.c_str()  // name of mapping object
-      );
+    }
+    else
+    {
+        _handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, // read/write access
+                                     FALSE,         // do not inherit the name
+                                     _path.c_str()  // name of mapping object
+        );
 
-      // TODO: Windows has no default support for shared memory persistence
-      // see: destroy() to implement that
+        // TODO: Windows has no default support for shared memory persistence
+        // see: destroy() to implement that
 
-        if (!_handle) {
+        if (!_handle)
+        {
             return kErrorOpeningFailed;
         }
     }
@@ -119,35 +146,40 @@ Error Memory::createOrOpen(const bool create) {
     const DWORD access = FILE_MAP_ALL_ACCESS; // always request read/write view
     _data = MapViewOfFile(_handle, access, 0, 0, _size);
 
-    if (!_data) {
+    if (!_data)
+    {
         return kErrorMappingFailed;
     }
     return kOK;
 }
 
-void Memory::destroy() {
-
-  // TODO: Windows needs priviledges to define a shared memory (file mapping)
-  // OBJ_PERMANENT; furthermore, ZwCreateSection would need to be used.
-  // Instead of doing this; saving a file here (by name, temp dir)
-  // and reading memory from file in createOrOpen seems more suitable.
-  // Especially, because files can be removed on reboot using:
-  // MoveFileEx() with the MOVEFILE_DELAY_UNTIL_REBOOT flag and lpNewFileName
-  // set to NULL.
+void Memory::destroy()
+{
+    // TODO: Windows needs priviledges to define a shared memory (file mapping)
+    // OBJ_PERMANENT; furthermore, ZwCreateSection would need to be used.
+    // Instead of doing this; saving a file here (by name, temp dir)
+    // and reading memory from file in createOrOpen seems more suitable.
+    // Especially, because files can be removed on reboot using:
+    // MoveFileEx() with the MOVEFILE_DELAY_UNTIL_REBOOT flag and lpNewFileName
+    // set to NULL.
 }
 
-void Memory::close() {
-    if (_data) {
+void Memory::close()
+{
+    if (_data)
+    {
         UnmapViewOfFile(_data);
         _data = nullptr;
     }
     CloseHandle(_handle);
 }
 
-Memory::~Memory() {
+Memory::~Memory()
+{
     close();
-    if (!_persist) {
-      destroy();
+    if (!_persist)
+    {
+        destroy();
     }
 }
 #endif // defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
@@ -174,16 +206,20 @@ namespace lsm_internal
 inline Memory::Memory(const std::string& path, const std::size_t size, const bool persist) : _size(size), _persist(persist)
 {
     _path = "/" + path;
-};
+}
 
-inline Error Memory::createOrOpen(const bool create) {
-    if (create) {
+inline Error Memory::createOrOpen(const bool create)
+{
+    if (create)
+    {
         // shm segments persist across runs, and macOS will refuse
         // to ftruncate an existing shm segment, so to be on the safe
         // side, we unlink it beforehand.
         const int ret = shm_unlink(_path.c_str());
-        if (ret < 0) {
-            if (errno != ENOENT) {
+        if (ret < 0)
+        {
+            if (errno != ENOENT)
+            {
                 return kErrorCreationFailed;
             }
         }
@@ -230,52 +266,63 @@ inline Error Memory::createOrOpen(const bool create) {
         return kErrorMappingFailed;
     }
 
-    if (!_data) {
+    if (!_data)
+    {
         return kErrorMappingFailed;
     }
     return kOK;
 }
 
-inline void Memory::destroy() const { shm_unlink(_path.c_str()); }
-
-inline void Memory::close() {
-  munmap(_data, _size);
-  if (_fd >= 0) {
-    int fd_to_close = _fd;
-    _fd = -1;
-    // Use helper function to avoid name collision
-    lsm_internal::posix_close(fd_to_close);
-  }
+inline void Memory::destroy() const
+{
+    shm_unlink(_path.c_str());
 }
 
-inline Memory::~Memory() {
+inline void Memory::close()
+{
+    munmap(_data, _size);
+    if (_fd >= 0)
+    {
+        const int fd_to_close = _fd;
+        _fd = -1;
+        // Use helper function to avoid name collision
+        lsm_internal::posix_close(fd_to_close);
+    }
+}
+
+inline Memory::~Memory()
+{
     close();
-    if (!_persist) {
+    if (!_persist)
+    {
         destroy();
     }
 }
 
 #endif // defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 
-class SharedMemoryReadStream {
+class SharedMemoryReadStream
+{
 public:
-
     SharedMemoryReadStream(const std::string& name, const std::size_t bufferSize, const bool isPersistent):
-        _memory(name, bufferSize, isPersistent) {
-
-        if (_memory.open() != kOK) {
+        _memory(name, bufferSize, isPersistent)
+    {
+        if (_memory.open() != kOK)
+        {
             throw "Shared memory segment could not be opened.";
         }
     }
 
     char readFlags() const
     {
-      const auto memory = static_cast<char*>(_memory.data());
-      return memory[0];
+        const auto memory = static_cast<char*>(_memory.data());
+        return memory[0];
     }
 
-    void close() { _memory.close(); }
-
+    void close()
+    {
+        _memory.close();
+    }
 
     size_t readSize(const char dataType) const
     {
@@ -295,13 +342,15 @@ public:
             std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
         }
 
-        if (dataType & kMemoryTypeFloat) {
+        if (dataType & kMemoryTypeFloat)
+        {
             const auto intMemory = static_cast<int*>(memory);
             // copy size data to size variable
             std::memcpy(&size, &intMemory[flagSize], bufferSizeSize);
         }
 
-        if (dataType & kMemoryTypeString) {
+        if (dataType & kMemoryTypeString)
+        {
             const auto charMemory = static_cast<char*>(memory);
             // copy size data to size variable
             std::memcpy(&size, &charMemory[flagSize], bufferSizeSize);
@@ -309,21 +358,25 @@ public:
         return size;
     }
 
-    size_t readLength(const char dataType) {
-      const size_t size = readSize(dataType);
+    size_t readLength(const char dataType) const
+    {
+        const size_t size = readSize(dataType);
 
-      if (dataType & kMemoryTypeString) {
-        return size / sizeOfOneChar;
-      }
-            
-      if (dataType & kMemoryTypeFloat) {
-        return size / sizeOfOneFloat;
-      }
-            
-      if (dataType & kMemoryTypeDouble) {
-        return size / sizeOfOneDouble;
-      }
-      return 0;
+        if (dataType & kMemoryTypeString)
+        {
+            return size / sizeOfOneChar;
+        }
+
+        if (dataType & kMemoryTypeFloat)
+        {
+            return size / sizeOfOneFloat;
+        }
+
+        if (dataType & kMemoryTypeDouble)
+        {
+            return size / sizeOfOneDouble;
+        }
+        return 0;
     }
 
     /**
@@ -333,7 +386,8 @@ public:
      * @return float*
      */
     // TODO: might wanna use templated functions here like: <T> readNumericArray()
-    double* readDoubleArray() {
+    double* readDoubleArray() const
+    {
         void *memory = _memory.data();
         const std::size_t size = readSize(kMemoryTypeDouble);
         const auto typedMemory = static_cast<double*>(memory);
@@ -343,7 +397,7 @@ public:
 
         // copy to data buffer
         std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
-        
+
         return data;
     }
 
@@ -353,7 +407,8 @@ public:
      * 
      * @return float* 
      */
-    float* readFloatArray() {
+    float* readFloatArray() const
+    {
         void *memory = _memory.data();
         const auto typedMemory = static_cast<float*>(memory);
 
@@ -364,19 +419,19 @@ public:
 
         // copy to data buffer
         std::memcpy(data, &typedMemory[flagSize + bufferSizeSize], size);
-        
+
         return data;
     }
 
-    std::string readString() {
+    std::string readString() const
+    {
         const auto memory = static_cast<char*>(_memory.data());
 
         const std::size_t size = readSize(kMemoryTypeString);
 
         // create a string that copies the data from memory
-        auto data =
-            std::string(&memory[flagSize + bufferSizeSize], size);
-        
+        auto data = std::string(&memory[flagSize + bufferSizeSize], size);
+
         return data;
     }
 
@@ -384,24 +439,25 @@ private:
     Memory _memory;
 };
 
-class SharedMemoryWriteStream {
+class SharedMemoryWriteStream
+{
 public:
-
     SharedMemoryWriteStream(const std::string& name, const std::size_t bufferSize, const bool isPersistent):
-        _memory(name, bufferSize, isPersistent) {
-
-        if (_memory.create() != kOK) {
+        _memory(name, bufferSize, isPersistent)
+    {
+        if (_memory.create() != kOK)
+        {
             throw "Shared memory segment could not be created.";
         }
     }
 
-    void close() {
-      _memory.close();
+    void close()
+    {
+        _memory.close();
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    static char getWriteFlags(const char type,
-                       const char currentFlags)
+    static char getWriteFlags(const char type, const char currentFlags)
     {
         char flags = type;
 
@@ -449,7 +505,7 @@ public:
         // 2) copy buffer size into buffer (meta data for deserializing)
         const std::size_t bufferSize = length * sizeOfOneFloat;
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-        
+
         // 3) copy float* into memory buffer
         std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
     }
@@ -465,7 +521,7 @@ public:
         const std::size_t bufferSize = length * sizeOfOneDouble;
 
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-        
+
         // 3) copy double* into memory buffer
         std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
     }
@@ -478,6 +534,5 @@ public:
 private:
     Memory _memory;
 };
-
 
 }; // namespace lsm
