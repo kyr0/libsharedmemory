@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 0
+#define LIBSHAREDMEMORY_VERSION_MINOR 1
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -10,6 +10,12 @@
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 #include <cstdint> // intptr_t, uint8_t, etc.
 #include <limits>
+
+#if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
+#include <fcntl.h>    // O_* constants
+#include <sys/mman.h> // mmap, munmap
+#include <unistd.h>   // shm functions, close
+#endif
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -299,25 +305,6 @@ Memory::~Memory()
 }
 #endif // defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
-#if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
-
-#include <fcntl.h>     // for O_* constants
-#include <sys/mman.h>  // mmap, munmap
-#include <unistd.h>    // unlink, close
-
-// Helper function to call POSIX close() without name collision
-namespace lsm_internal
-{
-    inline int posix_close(const int fd)
-    {
-        return close(fd);
-    }
-}
-
-#if defined(__APPLE__)
-
-#endif // __APPLE__
-
 inline Memory::Memory(const std::string& path, const std::size_t size, const bool persist) : _size(size), _persist(persist)
 {
     _path = "/" + path;
@@ -400,8 +387,8 @@ inline void Memory::close()
     {
         const int fd_to_close = _fd;
         _fd = -1;
-        // Use helper function to avoid name collision
-        lsm_internal::posix_close(fd_to_close);
+        // call POSIX close directly to avoid name collision with method close()
+        ::close(fd_to_close);
     }
 }
 
@@ -413,8 +400,6 @@ inline Memory::~Memory()
         destroy();
     }
 }
-
-#endif // defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 
 class SharedMemoryReadStream
 {
@@ -482,8 +467,8 @@ public:
     /**
      * @brief Returns a float* read from shared memory
      * Caller has the obligation to call delete [] on the returning float*.
-     * 
-     * @return float* 
+     *
+     * @return float*
      */
     float* readFloatArray() const
     {
@@ -569,7 +554,7 @@ public:
 
         // 2) copy buffer size into buffer (meta data for deserializing)
         const char *stringData = string.data();
-        const std::uint32_t bufferSize = static_cast<std::uint32_t>(string.size());
+        const auto bufferSize = static_cast<std::uint32_t>(string.size());
 
         // write data
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
@@ -607,7 +592,7 @@ private:
         const char flags = getWriteFlags(typeFlag, memory[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
-        const std::uint32_t bufferSize = static_cast<std::uint32_t>(length * sizeof(T));
+        const auto bufferSize = static_cast<std::uint32_t>(length * sizeof(T));
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
         std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
     }
