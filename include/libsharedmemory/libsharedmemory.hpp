@@ -305,6 +305,9 @@ Memory::~Memory()
 }
 #endif // defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
 
+// POSIX shared memory implementation
+#if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
+
 inline Memory::Memory(const std::string& path, const std::size_t size, const bool persist) : _size(size), _persist(persist)
 {
     _path = "/" + path;
@@ -400,6 +403,8 @@ inline Memory::~Memory()
         destroy();
     }
 }
+
+#endif // POSIX implementation
 
 class SharedMemoryReadStream
 {
