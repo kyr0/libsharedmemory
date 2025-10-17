@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 1
+#define LIBSHAREDMEMORY_VERSION_MINOR 2
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -23,6 +23,8 @@
 #define NOMINMAX 1
 #endif
 #include <windows.h>
+#undef min
+#undef max
 #undef WIN32_LEAN_AND_MEAN
 #endif
 
