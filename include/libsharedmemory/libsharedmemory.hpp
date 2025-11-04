@@ -1,15 +1,18 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 2
+#define LIBSHAREDMEMORY_VERSION_MINOR 4
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
 #include <cstdint> // intptr_t, uint8_t, etc.
 #include <limits>
+#include <span>
+#include <concepts>
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 #include <fcntl.h>    // O_* constants
@@ -31,15 +34,15 @@
 namespace lsm
 {
 
-enum Error
+enum class Error
 {
-  kOK = 0,
-  kErrorCreationFailed = 100,
-  kErrorMappingFailed = 110,
-  kErrorOpeningFailed = 120,
+  OK = 0,
+  CreationFailed = 100,
+  MappingFailed = 110,
+  OpeningFailed = 120,
 };
 
-enum DataType
+enum DataType : std::uint8_t
 {
   kMemoryChanged = 1,
   kMemoryTypeString = 2,
@@ -48,11 +51,11 @@ enum DataType
 };
 
 // byte sizes of memory layout
-constexpr size_t bufferSizeSize = 4; // store buffer length as 32-bit value
-constexpr size_t sizeOfOneFloat = 4; // float takes 4 bytes
-constexpr size_t sizeOfOneChar = 1; // char takes 1 byte
-constexpr size_t sizeOfOneDouble = 8; // double takes 8 bytes
-constexpr size_t flagSize = 1; // char takes 1 byte
+inline constexpr std::size_t bufferSizeSize = 4; // store buffer length as 32-bit value
+inline constexpr std::size_t sizeOfOneFloat = 4; // float takes 4 bytes
+inline constexpr std::size_t sizeOfOneChar = 1; // char takes 1 byte
+inline constexpr std::size_t sizeOfOneDouble = 8; // double takes 8 bytes
+inline constexpr std::size_t flagSize = 1; // char takes 1 byte
 
 class Memory
 {
@@ -62,30 +65,35 @@ public:
     explicit Memory(const std::string& path, std::size_t size, bool persist);
 
     // create a shared memory area and open it for writing
-    Error create()
+    [[nodiscard]] Error create()
     {
         return createOrOpen(true);
     }
 
     // open an existing shared memory for reading
-    Error open()
+    [[nodiscard]] Error open()
     {
         return createOrOpen(false);
     }
 
-    std::size_t size() const
+    [[nodiscard]] std::size_t size() const noexcept
     {
         return _size;
     }
 
-    const std::string &path()
+    [[nodiscard]] const std::string &path() const noexcept
     {
         return _path;
     }
 
-    void *data() const
+    [[nodiscard]] void *data() const noexcept
     {
         return _data;
+    }
+
+    [[nodiscard]] std::span<std::byte> as_bytes() const noexcept
+    {
+        return std::span<std::byte>(static_cast<std::byte*>(_data), _size);
     }
 
     void destroy() const;
@@ -95,7 +103,7 @@ public:
     ~Memory();
 
 private:
-    Error createOrOpen(bool create);
+    [[nodiscard]] Error createOrOpen(bool create);
 
     std::string _path;
     void *_data = nullptr;
@@ -183,7 +191,7 @@ Error Memory::createOrOpen(const bool create)
 
         if (fileHandle == INVALID_HANDLE_VALUE)
         {
-            return create ? kErrorCreationFailed : kErrorOpeningFailed;
+            return create ? Error::CreationFailed : Error::OpeningFailed;
         }
 
         LARGE_INTEGER requiredSize;
@@ -204,7 +212,7 @@ Error Memory::createOrOpen(const bool create)
             if (!SetFilePointerEx(fileHandle, requiredSize, NULL, FILE_BEGIN) || !SetEndOfFile(fileHandle))
             {
                 CloseHandle(fileHandle);
-                return kErrorCreationFailed;
+                return Error::CreationFailed;
             }
         }
 
@@ -221,7 +229,7 @@ Error Memory::createOrOpen(const bool create)
         {
             CloseHandle(_fileHandle);
             _fileHandle = INVALID_HANDLE_VALUE;
-            return kErrorMappingFailed;
+            return Error::MappingFailed;
         }
     }
     else
@@ -236,7 +244,7 @@ Error Memory::createOrOpen(const bool create)
 
             if (!_handle)
             {
-                return kErrorCreationFailed;
+                return Error::CreationFailed;
             }
         }
         else
@@ -247,7 +255,7 @@ Error Memory::createOrOpen(const bool create)
 
             if (!_handle)
             {
-                return kErrorOpeningFailed;
+                return Error::OpeningFailed;
             }
         }
     }
@@ -260,9 +268,9 @@ Error Memory::createOrOpen(const bool create)
     if (!_data)
     {
         close();
-        return kErrorMappingFailed;
+        return Error::MappingFailed;
     }
-    return kOK;
+    return Error::OK;
 }
 
 void Memory::destroy() const
@@ -327,7 +335,7 @@ inline Error Memory::createOrOpen(const bool create)
         {
             if (errno != ENOENT)
             {
-                return kErrorCreationFailed;
+                return Error::CreationFailed;
             }
         }
     }
@@ -339,11 +347,11 @@ inline Error Memory::createOrOpen(const bool create)
     {
         if (create)
         {
-            return kErrorCreationFailed;
+            return Error::CreationFailed;
         }
         else
         {
-            return kErrorOpeningFailed;
+            return Error::OpeningFailed;
         }
     }
 
@@ -354,7 +362,7 @@ inline Error Memory::createOrOpen(const bool create)
         const int ret = ftruncate(_fd, _size);
         if (ret != 0)
         {
-            return kErrorCreationFailed;
+            return Error::CreationFailed;
         }
     }
 
@@ -370,14 +378,14 @@ inline Error Memory::createOrOpen(const bool create)
 
     if (_data == MAP_FAILED)
     {
-        return kErrorMappingFailed;
+        return Error::MappingFailed;
     }
 
     if (!_data)
     {
-        return kErrorMappingFailed;
+        return Error::MappingFailed;
     }
-    return kOK;
+    return Error::OK;
 }
 
 inline void Memory::destroy() const
@@ -414,13 +422,13 @@ public:
     SharedMemoryReadStream(const std::string& name, const std::size_t bufferSize, const bool isPersistent):
         _memory(name, bufferSize, isPersistent)
     {
-        if (_memory.open() != kOK)
+        if (_memory.open() != Error::OK)
         {
             throw "Shared memory segment could not be opened.";
         }
     }
 
-    char readFlags() const
+    [[nodiscard]] char readFlags() const noexcept
     {
         const auto memory = static_cast<const char*>(_memory.data());
         return memory[0];
@@ -431,7 +439,7 @@ public:
         _memory.close();
     }
 
-    size_t readSize(const char /*dataType*/) const
+    [[nodiscard]] size_t readSize(const char /*dataType*/) const noexcept
     {
         const auto memory = static_cast<const char*>(_memory.data());
         std::uint32_t storedSize = 0;
@@ -439,7 +447,7 @@ public:
         return static_cast<std::size_t>(storedSize);
     }
 
-    size_t readLength(const char dataType) const
+    [[nodiscard]] size_t readLength(const char dataType) const noexcept
     {
         const size_t size = readSize(dataType);
 
@@ -466,7 +474,7 @@ public:
      *
      * @return float*
      */
-    double* readDoubleArray() const
+    [[nodiscard]] double* readDoubleArray() const
     {
         return readNumericArray<double>(kMemoryTypeDouble, sizeOfOneDouble);
     }
@@ -477,12 +485,12 @@ public:
      *
      * @return float*
      */
-    float* readFloatArray() const
+    [[nodiscard]] float* readFloatArray() const
     {
         return readNumericArray<float>(kMemoryTypeFloat, sizeOfOneFloat);
     }
 
-    std::string readString() const
+    [[nodiscard]] std::string readString() const
     {
         const auto memory = static_cast<const char*>(_memory.data());
 
@@ -496,7 +504,7 @@ public:
 
 private:
     template <typename T>
-    T* readNumericArray(const char typeFlag, const std::size_t elementSize) const
+    [[nodiscard]] T* readNumericArray(const char typeFlag, const std::size_t elementSize) const
     {
         const auto memory = static_cast<const char*>(_memory.data());
         const std::size_t byteSize = readSize(typeFlag);
@@ -517,7 +525,7 @@ public:
     SharedMemoryWriteStream(const std::string& name, const std::size_t bufferSize, const bool isPersistent):
         _memory(name, bufferSize, isPersistent)
     {
-        if (_memory.create() != kOK)
+        if (_memory.create() != Error::OK)
         {
             throw "Shared memory segment could not be created.";
         }
@@ -529,7 +537,7 @@ public:
     }
 
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
-    static char getWriteFlags(const char type, const char currentFlags)
+    [[nodiscard]] static constexpr char getWriteFlags(const char type, const char currentFlags) noexcept
     {
         char flags = type;
 
@@ -546,7 +554,7 @@ public:
         return flags;
     }
 
-    void write(const std::string& string) const
+    void write(std::string_view string) const
     {
         const auto memory = static_cast<char*>(_memory.data());
 
@@ -570,14 +578,24 @@ public:
         std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
     }
 
+    void write(std::span<const float> data) const
+    {
+        writeNumericArray(data, kMemoryTypeFloat);
+    }
+
     void write(const float* data, const std::size_t length) const
     {
-        writeNumericArray<float>(data, length, kMemoryTypeFloat);
+        write(std::span<const float>(data, length));
+    }
+
+    void write(std::span<const double> data) const
+    {
+        writeNumericArray(data, kMemoryTypeDouble);
     }
 
     void write(const double* data, const std::size_t length) const
     {
-        writeNumericArray<double>(data, length, kMemoryTypeDouble);
+        write(std::span<const double>(data, length));
     }
 
     void destroy() const
@@ -587,8 +605,11 @@ public:
 
 private:
     template <typename T>
-    void writeNumericArray(const T* data, const std::size_t length, const char typeFlag) const
+    requires std::is_floating_point_v<T>
+    void writeNumericArray(std::span<const T> data, const char typeFlag) const
     {
+        const std::size_t length = data.size();
+
         if (length > 0 && length > (std::numeric_limits<std::uint32_t>::max() / sizeof(T)))
         {
             throw "Numeric payload exceeds maximum shared memory size.";
@@ -601,7 +622,7 @@ private:
 
         const auto bufferSize = static_cast<std::uint32_t>(length * sizeof(T));
         std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-        std::memcpy(&memory[flagSize + bufferSizeSize], data, bufferSize);
+        std::memcpy(&memory[flagSize + bufferSizeSize], data.data(), bufferSize);
     }
 
     Memory _memory;
