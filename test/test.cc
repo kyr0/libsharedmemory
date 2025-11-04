@@ -24,14 +24,14 @@ const lest::test specification[] =
     CASE("shared memory can be created and opened and transfer uint8_t")
     {
         Memory memoryWriter {"lsmtest", 64, true};
-        EXPECT(kOK == memoryWriter.create());
+        EXPECT(Error::OK == memoryWriter.create());
 
         static_cast<uint8_t*>(memoryWriter.data())[0] = 0x11;
         static_cast<uint8_t*>(memoryWriter.data())[1] = 0x34;
 
         Memory memoryReader{"lsmtest", 64, true};
 
-        EXPECT(kOK == memoryReader.open());
+        EXPECT(Error::OK == memoryReader.open());
 
     log_test_message("single uint8_t: SUCCESS");
 
@@ -45,7 +45,7 @@ const lest::test specification[] =
     CASE("non-existing shared memory objects err")
     {
         Memory memoryReader{"lsmtest2", 64, true};
-        EXPECT(kErrorOpeningFailed == memoryReader.open());
+        EXPECT(Error::OpeningFailed == memoryReader.open());
     log_test_message("error when opening non-existing segment: SUCCESS");
     },
 
@@ -308,7 +308,7 @@ const lest::test specification[] =
         const std::string pipeName = "persistSegmentTest";
         {
             Memory writer{pipeName, 128, true};
-            EXPECT(kOK == writer.create());
+            EXPECT(Error::OK == writer.create());
 
             auto *bytes = static_cast<uint8_t*>(writer.data());
             bytes[0] = 0xAB;
@@ -318,7 +318,7 @@ const lest::test specification[] =
         }
 
         Memory reader{pipeName, 128, true};
-        EXPECT(kOK == reader.open());
+        EXPECT(Error::OK == reader.open());
 
         auto *readBytes = static_cast<uint8_t*>(reader.data());
         EXPECT(0xAB == readBytes[0]);
@@ -335,14 +335,14 @@ const lest::test specification[] =
         const std::string pipeName = "ephemeralSegmentTest";
         {
             Memory ephemeral{pipeName, 128, false};
-            EXPECT(kOK == ephemeral.create());
+            EXPECT(Error::OK == ephemeral.create());
 
             static_cast<uint8_t*>(ephemeral.data())[0] = 0x77;
             ephemeral.close();
         }
 
         Memory reopen{pipeName, 128, false};
-        EXPECT(kErrorOpeningFailed == reopen.open());
+        EXPECT(Error::OpeningFailed == reopen.open());
 
     log_test_message("Ephemeral segment removed after destruction: SUCCESS");
     },
