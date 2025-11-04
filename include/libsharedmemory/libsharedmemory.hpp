@@ -12,7 +12,6 @@
 #include <cstdint> // intptr_t, uint8_t, etc.
 #include <limits>
 #include <span>
-#include <bit>
 #include <concepts>
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
@@ -610,7 +609,7 @@ private:
     void writeNumericArray(std::span<const T> data, const char typeFlag) const
     {
         const std::size_t length = data.size();
-        
+
         if (length > 0 && length > (std::numeric_limits<std::uint32_t>::max() / sizeof(T)))
         {
             throw "Numeric payload exceeds maximum shared memory size.";
