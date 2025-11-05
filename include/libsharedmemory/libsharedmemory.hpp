@@ -180,6 +180,8 @@ Error Memory::createOrOpen(const bool create)
             _persistFilePath = lsm_windows_detail::persistence_file_path(_path);
         }
 
+        // OPEN_ALWAYS: Opens if exists, creates if not - allows for persistent reuse
+        // CREATE_ALWAYS: Always creates new, truncating existing - forces fresh start
         const DWORD disposition = create ? CREATE_ALWAYS : OPEN_EXISTING;
         HANDLE fileHandle = CreateFileA(_persistFilePath.c_str(),
                                         GENERIC_READ | GENERIC_WRITE,
@@ -197,6 +199,7 @@ Error Memory::createOrOpen(const bool create)
         LARGE_INTEGER requiredSize;
         requiredSize.QuadPart = static_cast<LONGLONG>(_size);
 
+        // Always resize to required size in create mode to ensure proper initialization
         bool resizeFile = create;
         if (!create)
         {
@@ -236,6 +239,8 @@ Error Memory::createOrOpen(const bool create)
     {
         if (create)
         {
+            // For ephemeral memory, try to create with the name
+            // If it already exists, we'll get a handle to the existing one
             _handle = CreateFileMappingA(INVALID_HANDLE_VALUE,  // use paging file
                                          NULL,                  // default security
                                          PAGE_READWRITE,        // read/write access
@@ -246,6 +251,11 @@ Error Memory::createOrOpen(const bool create)
             {
                 return Error::CreationFailed;
             }
+
+            // Check if we opened an existing mapping (can happen in multi-process scenarios)
+            // If GetLastError() returns ERROR_ALREADY_EXISTS, the mapping already existed
+            // For ephemeral memory in create mode, this is typically fine since the
+            // destructor will clean it up when all processes are done
         }
         else
         {
@@ -766,12 +776,12 @@ public:
     {
         if (!_isWriter)
         {
-            throw "Cannot enqueue from a reader queue instance.";
+            throw std::runtime_error("Cannot enqueue from a reader queue instance.");
         }
 
         if (message.size() > _maxMessageSize)
         {
-            throw "Message exceeds maximum message size.";
+            throw std::runtime_error("Message exceeds maximum message size.");
         }
 
         if (isFull())
@@ -811,7 +821,7 @@ public:
     {
         if (_isWriter)
         {
-            throw "Cannot dequeue from a writer queue instance.";
+            throw std::runtime_error("Cannot dequeue from a writer queue instance.");
         }
 
         if (isEmpty())

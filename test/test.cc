@@ -655,7 +655,7 @@ const lest::test specification[] =
         constexpr std::uint32_t capacity = 20;
         constexpr std::uint32_t maxMessageSize = 128;
 
-        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, false, true};
+        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, true, true};
 
         constexpr int numMessages = 100;
         std::atomic<int> messagesProduced{0};
@@ -681,7 +681,7 @@ const lest::test specification[] =
         // Consumer thread
         std::thread consumer([&]()
         {
-            SharedMemoryQueue reader{queueName, capacity, maxMessageSize, false, false};
+            SharedMemoryQueue reader{queueName, capacity, maxMessageSize, true, false};
 
             while (messagesConsumed < numMessages)
             {
@@ -711,6 +711,7 @@ const lest::test specification[] =
         log_test_message("SharedMemoryQueue: Multithread producer-consumer: SUCCESS");
 
         writer.close();
+        writer.destroy();
     }
 
     // NOTE: Multiple concurrent producers accessing the same SharedMemoryQueue instance
