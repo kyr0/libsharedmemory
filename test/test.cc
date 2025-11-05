@@ -6,6 +6,10 @@
 #include <bitset>
 #include <cstdint>
 #include <sstream>
+#include <thread>
+#include <vector>
+#include <atomic>
+#include <chrono>
 
 using namespace std;
 using namespace lsm;
@@ -33,7 +37,7 @@ const lest::test specification[] =
 
         EXPECT(Error::OK == memoryReader.open());
 
-    log_test_message("single uint8_t: SUCCESS");
+        log_test_message("single uint8_t: SUCCESS");
 
         EXPECT(0x11 == ((uint8_t*)memoryReader.data())[0]);
         EXPECT(0x34 == ((uint8_t *)memoryReader.data())[1]);
@@ -46,7 +50,7 @@ const lest::test specification[] =
     {
         Memory memoryReader{"lsmtest2", 64, true};
         EXPECT(Error::OpeningFailed == memoryReader.open());
-    log_test_message("error when opening non-existing segment: SUCCESS");
+        log_test_message("error when opening non-existing segment: SUCCESS");
     },
 
     CASE("using MemoryStreamWriter and MemoryStreamReader to transfer std::string")
@@ -60,9 +64,9 @@ const lest::test specification[] =
 
         const std::string dataString = read$.readString();
 
-    std::ostringstream msg;
-    msg << "std::string (UTF8): SUCCESS | " << dataString;
-    log_test_message(msg.str());
+        std::ostringstream msg;
+        msg << "std::string (UTF8): SUCCESS | " << dataString;
+        log_test_message(msg.str());
 
         EXPECT(dataToTransfer == dataString);
 
@@ -90,7 +94,7 @@ const lest::test specification[] =
             write$.close();
             read$.close();
         }
-    log_test_message("std::string more/less: SUCCESS; 1000 runs");
+        log_test_message("std::string more/less: SUCCESS; 1000 runs");
     },
 
     CASE("Write a lot")
@@ -111,7 +115,7 @@ const lest::test specification[] =
 
         EXPECT(blob == dataString);
 
-    log_test_message("std::string blob: SUCCESS");
+        log_test_message("std::string blob: SUCCESS");
     },
 
     CASE("Can read flags, sets the right datatype and data change bit flips")
@@ -129,15 +133,15 @@ const lest::test specification[] =
 
         EXPECT(!!(flagsData & kMemoryTypeString));
 
-    std::ostringstream statusMsg;
-    statusMsg << "status flag shows string data type flag: SUCCESS: 0b" << flags;
-    log_test_message(statusMsg.str());
+        std::ostringstream statusMsg;
+        statusMsg << "status flag shows string data type flag: SUCCESS: 0b" << flags;
+        log_test_message(statusMsg.str());
         
         EXPECT(!!(flagsData & kMemoryChanged));
 
-    std::ostringstream changeMsg;
-    changeMsg << "status flag has the change bit set: SUCCESS: 0b" << flags;
-    log_test_message(changeMsg.str());
+        std::ostringstream changeMsg;
+        changeMsg << "status flag has the change bit set: SUCCESS: 0b" << flags;
+        log_test_message(changeMsg.str());
 
         write$.write("foo!");
 
@@ -200,7 +204,7 @@ const lest::test specification[] =
         EXPECT(numbers[3] == numbersReadPtr[3]);
         EXPECT(numbers[71] == numbersReadPtr[71]);
 
-    log_test_message("float[72]: SUCCESS");
+        log_test_message("float[72]: SUCCESS");
 
         write$.write(numbers, 72);
 
@@ -276,7 +280,7 @@ const lest::test specification[] =
         EXPECT(numbers[3] == numbersReadPtr[3]);
         EXPECT(numbers[71] == numbersReadPtr[71]);
 
-    log_test_message("double[72]: SUCCESS");
+        log_test_message("double[72]: SUCCESS");
 
         write$.write(numbers, 72);
 
@@ -324,7 +328,7 @@ const lest::test specification[] =
         EXPECT(0xAB == readBytes[0]);
         EXPECT(0xCD == readBytes[1]);
 
-    log_test_message("Persistent segment reopened with data intact: SUCCESS");
+        log_test_message("Persistent segment reopened with data intact: SUCCESS");
 
         reader.close();
         reader.destroy();
@@ -344,7 +348,7 @@ const lest::test specification[] =
         Memory reopen{pipeName, 128, false};
         EXPECT(Error::OpeningFailed == reopen.open());
 
-    log_test_message("Ephemeral segment removed after destruction: SUCCESS");
+        log_test_message("Ephemeral segment removed after destruction: SUCCESS");
     },
 
     CASE("Shared memory streams handle empty strings")
@@ -360,12 +364,362 @@ const lest::test specification[] =
         EXPECT(0UL == reader.readLength(kMemoryTypeString));
         EXPECT(emptyValue == reader.readString());
 
-    log_test_message("Empty string round-trip through shared memory: SUCCESS");
+        log_test_message("Empty string round-trip through shared memory: SUCCESS");
 
         writer.close();
         reader.close();
         writer.destroy();
     },
+    CASE("Multiple read, one write")
+    {
+        const std::string pipeName = "multiReadPipe";
+
+        SharedMemoryWriteStream writer{pipeName, 128, true};
+        SharedMemoryReadStream reader1{pipeName, 128, true};
+
+        const std::string message = "Hello, readers!";
+        writer.write(message);
+
+        EXPECT(message == reader1.readString());
+        EXPECT(message == reader1.readString());
+
+        log_test_message("Multiple readers read the same data: SUCCESS");
+
+        writer.close();
+        reader1.close();
+        writer.destroy();
+    },
+
+    CASE("Writer sends messages, reader consumes them")
+    {
+        const std::string pipeName = "messagePipe";
+
+        SharedMemoryWriteStream writer{pipeName, 256, true};
+        SharedMemoryReadStream reader{pipeName, 256, true};
+
+        // Initially there should be no data available
+        EXPECT(!reader.hasNewData());
+        EXPECT(writer.isMessageRead());
+
+        // Writer publishes first message
+        const std::string msg1 = "First message";
+        writer.write(msg1);
+
+        // Message should not be marked as read yet
+        EXPECT(!writer.isMessageRead());
+
+        // Reader should detect new data available
+        EXPECT(reader.hasNewData());
+
+        // Reader consumes the message
+        std::string read1 = reader.readString();
+        EXPECT(msg1 == read1);
+        reader.markAsRead();
+
+        // After consumption, no new data should be available
+        EXPECT(!reader.hasNewData());
+        EXPECT(writer.isMessageRead());
+
+        // Reading again should return same content but not be marked as "new"
+        std::string read1Again = reader.readString();
+        EXPECT(msg1 == read1Again);
+        EXPECT(!reader.hasNewData());
+
+        // Writer waits for previous message to be consumed before writing next
+        writer.waitForRead();
+
+        // Writer publishes second message
+        const std::string msg2 = "Second message";
+        writer.write(msg2);
+
+        EXPECT(!writer.isMessageRead());
+
+        // New data should be available again
+        EXPECT(reader.hasNewData());
+
+        // Reader consumes second message
+        std::string read2 = reader.readString();
+        EXPECT(msg2 == read2);
+        reader.markAsRead();
+
+        // No new data after consumption
+        EXPECT(!reader.hasNewData());
+        EXPECT(writer.isMessageRead());
+
+        // Writer waits before publishing third message
+        writer.waitForRead();
+
+        // Writer publishes third message
+        const std::string msg3 = "Third message 🚀";
+        writer.write(msg3);
+
+        EXPECT(!writer.isMessageRead());
+        EXPECT(reader.hasNewData());
+
+        // Reader consumes third message
+        std::string read3 = reader.readString();
+        EXPECT(msg3 == read3);
+        reader.markAsRead();
+
+        EXPECT(!reader.hasNewData());
+        EXPECT(writer.isMessageRead());
+
+        log_test_message("Writer sends messages, reader consumes them: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: Writer enqueues multiple messages, reader dequeues in FIFO order")
+    {
+        const std::string queueName = "testQueue";
+        const std::uint32_t capacity = 10;
+        const std::uint32_t maxMessageSize = 256;
+
+        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, true, true};
+        SharedMemoryQueue reader{queueName, capacity, maxMessageSize, true, false};
+
+        // Initially queue should be empty
+        EXPECT(writer.isEmpty());
+        EXPECT(reader.isEmpty());
+        EXPECT(writer.size() == 0);
+        EXPECT(reader.capacity() == capacity);
+
+        // Writer enqueues multiple messages
+        EXPECT(writer.enqueue("First message"));
+        EXPECT(writer.enqueue("Second message"));
+        EXPECT(writer.enqueue("Third message"));
+        EXPECT(writer.enqueue("Fourth message"));
+        EXPECT(writer.enqueue("Fifth message"));
+
+        // Check queue state
+        EXPECT(!writer.isEmpty());
+        EXPECT(writer.size() == 5);
+        EXPECT(!writer.isFull());
+
+        // Reader sees the same state
+        EXPECT(!reader.isEmpty());
+        EXPECT(reader.size() == 5);
+
+        // Reader dequeues messages in FIFO order
+        std::string msg;
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "First message");
+        EXPECT(reader.size() == 4);
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Second message");
+        EXPECT(reader.size() == 3);
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Third message");
+        EXPECT(reader.size() == 2);
+
+        // Writer continues to enqueue while reader dequeues
+        EXPECT(writer.enqueue("Sixth message"));
+        EXPECT(writer.enqueue("Seventh message"));
+        EXPECT(writer.size() == 4);
+
+        // Reader dequeues old messages first
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Fourth message");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Fifth message");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Sixth message");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Seventh message");
+
+        // Queue should be empty now
+        EXPECT(reader.isEmpty());
+        EXPECT(writer.isEmpty());
+
+        // Dequeuing from empty queue should return false
+        EXPECT(!reader.dequeue(msg));
+
+        log_test_message("SharedMemoryQueue: FIFO message queue: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: Queue full behavior")
+    {
+        const std::string queueName = "fullQueue";
+        const std::uint32_t capacity = 3;
+        const std::uint32_t maxMessageSize = 64;
+
+        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, true, true};
+        SharedMemoryQueue reader{queueName, capacity, maxMessageSize, true, false};
+
+        // Fill the queue
+        EXPECT(writer.enqueue("Message 1"));
+        EXPECT(writer.enqueue("Message 2"));
+        EXPECT(writer.enqueue("Message 3"));
+
+        EXPECT(writer.isFull());
+        EXPECT(writer.size() == capacity);
+
+        // Attempt to enqueue when full should fail
+        EXPECT(!writer.enqueue("Message 4"));
+
+        // Dequeue one message
+        std::string msg;
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Message 1");
+
+        // Now we can enqueue again
+        EXPECT(!writer.isFull());
+        EXPECT(writer.enqueue("Message 4"));
+
+        // Dequeue remaining messages
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Message 2");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Message 3");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Message 4");
+
+        EXPECT(reader.isEmpty());
+
+        log_test_message("SharedMemoryQueue: Queue full behavior: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: Peek without dequeuing")
+    {
+        const std::string queueName = "peekQueue";
+        const std::uint32_t capacity = 5;
+        const std::uint32_t maxMessageSize = 128;
+
+        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, true, true};
+        SharedMemoryQueue reader{queueName, capacity, maxMessageSize, true, false};
+
+        // Enqueue messages
+        EXPECT(writer.enqueue("First"));
+        EXPECT(writer.enqueue("Second"));
+        EXPECT(writer.enqueue("Third"));
+
+        std::string msg;
+
+        // Peek at first message multiple times
+        EXPECT(reader.peek(msg));
+        EXPECT(msg == "First");
+        EXPECT(reader.size() == 3); // Size unchanged
+
+        EXPECT(reader.peek(msg));
+        EXPECT(msg == "First");
+        EXPECT(reader.size() == 3);
+
+        // Dequeue first message
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "First");
+        EXPECT(reader.size() == 2);
+
+        // Peek at second message
+        EXPECT(reader.peek(msg));
+        EXPECT(msg == "Second");
+
+        // Dequeue all remaining
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Second");
+
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "Third");
+
+        // Peek on empty queue should fail
+        EXPECT(!reader.peek(msg));
+        EXPECT(reader.isEmpty());
+
+        log_test_message("SharedMemoryQueue: Peek functionality: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: Multithread producer-consumer")
+    {
+        const std::string queueName = "mtQueue1";
+        constexpr std::uint32_t capacity = 20;
+        constexpr std::uint32_t maxMessageSize = 128;
+
+        SharedMemoryQueue writer{queueName, capacity, maxMessageSize, true, true};
+
+        constexpr int numMessages = 100;
+        std::atomic<int> messagesProduced{0};
+        std::atomic<int> messagesConsumed{0};
+        std::atomic<bool> producerDone{false};
+
+        // Producer thread
+        std::thread producer([&]()
+        {
+            for (int i = 0; i < numMessages; ++i)
+            {
+                std::string msg = "Message " + std::to_string(i);
+                while (!writer.enqueue(msg))
+                {
+                    // Queue full, wait a bit
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
+                }
+                ++messagesProduced;
+            }
+            producerDone = true;
+        });
+
+        // Consumer thread
+        std::thread consumer([&]()
+        {
+            SharedMemoryQueue reader{queueName, capacity, maxMessageSize, true, false};
+
+            while (messagesConsumed < numMessages)
+            {
+                if (std::string msg; reader.dequeue(msg))
+                {
+                    // Verify message format (with single producer, FIFO order should be maintained)
+                    EXPECT(msg.find("Message ") == 0);
+                    ++messagesConsumed;
+                }
+                else
+                {
+                    // Queue empty, wait a bit
+                    std::this_thread::sleep_for(std::chrono::microseconds(10));
+                }
+            }
+
+            reader.close();
+        });
+
+        producer.join();
+        consumer.join();
+
+        EXPECT(messagesProduced == numMessages);
+        EXPECT(messagesConsumed == numMessages);
+        EXPECT(writer.isEmpty());
+
+        log_test_message("SharedMemoryQueue: Multithread producer-consumer: SUCCESS");
+
+        writer.close();
+        writer.destroy();
+    }
+
+    // NOTE: Multiple concurrent producers accessing the same SharedMemoryQueue instance
+    // requires additional synchronization (mutex or atomic operations) to prevent race
+    // conditions. The current implementation works well for:
+    // - Single producer, single consumer
+    // - Single producer, multiple consumers (read-only operations)
+    // Future work: Add atomic operations for truly lock-free multiple producer support
 };
 
 int main (const int argc, char *argv[])

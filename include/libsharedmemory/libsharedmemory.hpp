@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 4
+#define LIBSHAREDMEMORY_VERSION_MINOR 5
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -9,10 +9,9 @@
 #include <string>
 #include <string_view>
 #include <cstddef> // nullptr_t, ptrdiff_t, std::size_t
-#include <cstdint> // intptr_t, uint8_t, etc.
 #include <limits>
 #include <span>
-#include <concepts>
+#include <thread>
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 #include <fcntl.h>    // O_* constants
@@ -434,6 +433,18 @@ public:
         return memory[0];
     }
 
+    [[nodiscard]] bool hasNewData() const noexcept
+    {
+        const char flags = readFlags();
+        return !!(flags & kMemoryChanged);
+    }
+
+    void markAsRead() const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        memory[0] &= ~kMemoryChanged;
+    }
+
     void close()
     {
         _memory.close();
@@ -536,6 +547,21 @@ public:
         _memory.close();
     }
 
+    [[nodiscard]] bool isMessageRead() const noexcept
+    {
+        const auto memory = static_cast<const char*>(_memory.data());
+        const char flags = memory[0];
+        return !(flags & kMemoryChanged);
+    }
+
+    void waitForRead() const noexcept
+    {
+        while (!isMessageRead())
+        {
+            std::this_thread::yield();
+        }
+    }
+
     // https://stackoverflow.com/questions/18591924/how-to-use-bitmask
     [[nodiscard]] static constexpr char getWriteFlags(const char type, const char currentFlags) noexcept
     {
@@ -626,6 +652,238 @@ private:
     }
 
     Memory _memory;
+};
+
+/**
+ * @brief Queue structure for shared memory
+ * Layout: [writeIndex(4)][readIndex(4)][capacity(4)][count(4)][maxMessageSize(4)][messages...]
+ */
+class SharedMemoryQueue
+{
+private:
+    static constexpr std::size_t kWriteIndexOffset = 0;
+    static constexpr std::size_t kReadIndexOffset = 4;
+    static constexpr std::size_t kCapacityOffset = 8;
+    static constexpr std::size_t kCountOffset = 12;
+    static constexpr std::size_t kMaxMessageSizeOffset = 16;
+    static constexpr std::size_t kHeaderSize = 20;
+
+    Memory _memory;
+    std::uint32_t _capacity;
+    std::uint32_t _maxMessageSize;
+    bool _isWriter;
+
+    [[nodiscard]] std::uint32_t readUInt32(std::size_t offset) const noexcept
+    {
+        const auto memory = static_cast<const char*>(_memory.data());
+        std::uint32_t value = 0;
+        std::memcpy(&value, &memory[offset], sizeof(std::uint32_t));
+        return value;
+    }
+
+    void writeUInt32(std::size_t offset, std::uint32_t value) const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        std::memcpy(&memory[offset], &value, sizeof(std::uint32_t));
+    }
+
+    [[nodiscard]] std::size_t getMessageOffset(std::uint32_t index) const noexcept
+    {
+        // Each slot contains: [length(4)][data(maxMessageSize)]
+        return kHeaderSize + index * (_maxMessageSize + sizeof(std::uint32_t));
+    }
+
+public:
+    /**
+     * @brief Create or open a shared memory queue
+     * @param name Queue name
+     * @param capacity Maximum number of messages in queue
+     * @param maxMessageSize Maximum size of each message in bytes
+     * @param isPersistent Whether the queue persists after process exit
+     * @param isWriter True to create/write, false to open/read
+     */
+    SharedMemoryQueue(const std::string& name, std::uint32_t capacity,
+                      std::uint32_t maxMessageSize, bool isPersistent, bool isWriter)
+        : _memory(name, kHeaderSize + capacity * (maxMessageSize + sizeof(std::uint32_t)), isPersistent)
+        , _capacity(capacity)
+        , _maxMessageSize(maxMessageSize)
+        , _isWriter(isWriter)
+    {
+        if (isWriter)
+        {
+            if (_memory.create() != Error::OK)
+            {
+                throw "Shared memory queue could not be created.";
+            }
+
+            // Initialize queue metadata
+            writeUInt32(kWriteIndexOffset, 0);
+            writeUInt32(kReadIndexOffset, 0);
+            writeUInt32(kCapacityOffset, capacity);
+            writeUInt32(kCountOffset, 0);
+            writeUInt32(kMaxMessageSizeOffset, maxMessageSize);
+        }
+        else
+        {
+            if (_memory.open() != Error::OK)
+            {
+                throw "Shared memory queue could not be opened.";
+            }
+
+            // Read queue metadata
+            _capacity = readUInt32(kCapacityOffset);
+            _maxMessageSize = readUInt32(kMaxMessageSizeOffset);
+        }
+    }
+
+    [[nodiscard]] bool isEmpty() const noexcept
+    {
+        return readUInt32(kCountOffset) == 0;
+    }
+
+    [[nodiscard]] bool isFull() const noexcept
+    {
+        return readUInt32(kCountOffset) >= _capacity;
+    }
+
+    [[nodiscard]] std::uint32_t size() const noexcept
+    {
+        return readUInt32(kCountOffset);
+    }
+
+    [[nodiscard]] std::uint32_t capacity() const noexcept
+    {
+        return _capacity;
+    }
+
+    /**
+     * @brief Enqueue a message (writer only)
+     * @param message Message to enqueue
+     * @return true if message was enqueued, false if queue is full
+     */
+    bool enqueue(std::string_view message)
+    {
+        if (!_isWriter)
+        {
+            throw "Cannot enqueue from a reader queue instance.";
+        }
+
+        if (message.size() > _maxMessageSize)
+        {
+            throw "Message exceeds maximum message size.";
+        }
+
+        if (isFull())
+        {
+            return false;
+        }
+
+        const std::uint32_t writeIndex = readUInt32(kWriteIndexOffset);
+        const std::size_t offset = getMessageOffset(writeIndex);
+
+        auto memory = static_cast<char*>(_memory.data());
+
+        // Write message length
+        const auto messageLength = static_cast<std::uint32_t>(message.size());
+        std::memcpy(&memory[offset], &messageLength, sizeof(std::uint32_t));
+
+        // Write message data
+        std::memcpy(&memory[offset + sizeof(std::uint32_t)], message.data(), messageLength);
+
+        // Update write index (circular)
+        const std::uint32_t newWriteIndex = (writeIndex + 1) % _capacity;
+        writeUInt32(kWriteIndexOffset, newWriteIndex);
+
+        // Increment count
+        const std::uint32_t count = readUInt32(kCountOffset);
+        writeUInt32(kCountOffset, count + 1);
+
+        return true;
+    }
+
+    /**
+     * @brief Dequeue a message (reader only)
+     * @param message Output parameter for dequeued message
+     * @return true if message was dequeued, false if queue is empty
+     */
+    bool dequeue(std::string& message)
+    {
+        if (_isWriter)
+        {
+            throw "Cannot dequeue from a writer queue instance.";
+        }
+
+        if (isEmpty())
+        {
+            return false;
+        }
+
+        const std::uint32_t readIndex = readUInt32(kReadIndexOffset);
+        const std::size_t offset = getMessageOffset(readIndex);
+
+        const auto memory = static_cast<const char*>(_memory.data());
+
+        // Read message length
+        std::uint32_t messageLength = 0;
+        std::memcpy(&messageLength, &memory[offset], sizeof(std::uint32_t));
+
+        // Read message data
+        message.resize(messageLength);
+        std::memcpy(&message[0], &memory[offset + sizeof(std::uint32_t)], messageLength);
+
+        // Update read index (circular)
+        const std::uint32_t newReadIndex = (readIndex + 1) % _capacity;
+        writeUInt32(kReadIndexOffset, newReadIndex);
+
+        // Decrement count
+        const std::uint32_t count = readUInt32(kCountOffset);
+        writeUInt32(kCountOffset, count - 1);
+
+        return true;
+    }
+
+    /**
+     * @brief Peek at the next message without dequeuing (reader only)
+     * @param message Output parameter for peeked message
+     * @return true if message was peeked, false if queue is empty
+     */
+    bool peek(std::string& message) const
+    {
+        if (_isWriter)
+        {
+            throw "Cannot peek from a writer queue instance.";
+        }
+
+        if (isEmpty())
+        {
+            return false;
+        }
+
+        const std::uint32_t readIndex = readUInt32(kReadIndexOffset);
+        const std::size_t offset = getMessageOffset(readIndex);
+
+        const auto memory = static_cast<const char*>(_memory.data());
+
+        // Read message length
+        std::uint32_t messageLength = 0;
+        std::memcpy(&messageLength, &memory[offset], sizeof(std::uint32_t));
+
+        // Read message data
+        message.resize(messageLength);
+        std::memcpy(&message[0], &memory[offset + sizeof(std::uint32_t)], messageLength);
+
+        return true;
+    }
+
+    void close()
+    {
+        _memory.close();
+    }
+
+    void destroy() const
+    {
+        _memory.destroy();
+    }
 };
 
 }; // namespace lsm
