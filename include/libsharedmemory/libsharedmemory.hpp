@@ -13,6 +13,7 @@
 #include <span>
 #include <thread>
 #include <stdexcept>
+#include <atomic> // added for atomic queue counters
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 #include <fcntl.h>    // O_* constants
@@ -93,7 +94,7 @@ public:
 
     [[nodiscard]] std::span<std::byte> as_bytes() const noexcept
     {
-        return std::span<std::byte>(static_cast<std::byte*>(_data), _size);
+        return {static_cast<std::byte*>(_data), _size};
     }
 
     void destroy() const;
@@ -369,7 +370,7 @@ inline Error Memory::createOrOpen(const bool create)
     {
         // this is the only way to specify the size of a
         // newly-created POSIX shared memory object
-        const int ret = ftruncate(_fd, _size);
+        const int ret = ftruncate(_fd, static_cast<off_t>(_size));
         if (ret != 0)
         {
             return Error::CreationFailed;
@@ -530,7 +531,7 @@ private:
     {
         const auto memory = static_cast<const char*>(_memory.data());
         const std::size_t byteSize = readSize(typeFlag);
-        const std::size_t length = elementSize == 0 ? 0 : byteSize / elementSize;
+        const std::size_t length = byteSize / elementSize;
 
     auto data = new T[length]();
         std::memcpy(data, &memory[flagSize + bufferSizeSize], byteSize);
@@ -704,6 +705,13 @@ private:
         return kHeaderSize + index * (_maxMessageSize + sizeof(std::uint32_t));
     }
 
+    // Helper to access atomic count field in shared memory
+    [[nodiscard]] std::atomic<std::uint32_t>& atomicCount() const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[kCountOffset]);
+    }
+
 public:
     /**
      * @brief Create or open a shared memory queue
@@ -731,7 +739,9 @@ public:
             writeUInt32(kWriteIndexOffset, 0);
             writeUInt32(kReadIndexOffset, 0);
             writeUInt32(kCapacityOffset, capacity);
-            writeUInt32(kCountOffset, 0);
+            // construct atomic count with placement new to ensure proper atomic object initialization
+            auto memory = static_cast<char*>(_memory.data());
+            new (&memory[kCountOffset]) std::atomic<std::uint32_t>(0);
             writeUInt32(kMaxMessageSizeOffset, maxMessageSize);
         }
         else
@@ -749,17 +759,17 @@ public:
 
     [[nodiscard]] bool isEmpty() const noexcept
     {
-        return readUInt32(kCountOffset) == 0;
+        return atomicCount().load(std::memory_order_acquire) == 0;
     }
 
     [[nodiscard]] bool isFull() const noexcept
     {
-        return readUInt32(kCountOffset) >= _capacity;
+        return atomicCount().load(std::memory_order_acquire) >= _capacity;
     }
 
     [[nodiscard]] std::uint32_t size() const noexcept
     {
-        return readUInt32(kCountOffset);
+        return atomicCount().load(std::memory_order_acquire);
     }
 
     [[nodiscard]] std::uint32_t capacity() const noexcept
@@ -805,9 +815,8 @@ public:
         const std::uint32_t newWriteIndex = (writeIndex + 1) % _capacity;
         writeUInt32(kWriteIndexOffset, newWriteIndex);
 
-        // Increment count
-        const std::uint32_t count = readUInt32(kCountOffset);
-        writeUInt32(kCountOffset, count + 1);
+        // atomic increment of count
+        atomicCount().fetch_add(1, std::memory_order_release);
 
         return true;
     }
@@ -846,9 +855,8 @@ public:
         const std::uint32_t newReadIndex = (readIndex + 1) % _capacity;
         writeUInt32(kReadIndexOffset, newReadIndex);
 
-        // Decrement count
-        const std::uint32_t count = readUInt32(kCountOffset);
-        writeUInt32(kCountOffset, count - 1);
+        // atomic decrement of count
+        atomicCount().fetch_sub(1, std::memory_order_release);
 
         return true;
     }
