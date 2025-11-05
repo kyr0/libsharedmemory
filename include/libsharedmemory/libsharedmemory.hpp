@@ -12,6 +12,7 @@
 #include <limits>
 #include <span>
 #include <thread>
+#include <stdexcept>
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 #include <fcntl.h>    // O_* constants
@@ -423,7 +424,7 @@ public:
     {
         if (_memory.open() != Error::OK)
         {
-            throw "Shared memory segment could not be opened.";
+            throw std::runtime_error("Shared memory segment could not be opened.");
         }
     }
 
@@ -538,7 +539,7 @@ public:
     {
         if (_memory.create() != Error::OK)
         {
-            throw "Shared memory segment could not be created.";
+            throw std::runtime_error("Shared memory segment could not be created.");
         }
     }
 
@@ -586,7 +587,7 @@ public:
 
         if (string.size() > std::numeric_limits<std::uint32_t>::max())
         {
-            throw "String payload exceeds maximum shared memory size.";
+            throw std::runtime_error("String payload exceeds maximum shared memory size.");
         }
 
         // 1) copy change flag into buffer for change detection
@@ -638,7 +639,7 @@ private:
 
         if (length > 0 && length > (std::numeric_limits<std::uint32_t>::max() / sizeof(T)))
         {
-            throw "Numeric payload exceeds maximum shared memory size.";
+            throw std::runtime_error("Numeric payload exceeds maximum shared memory size.");
         }
 
         const auto memory = static_cast<char*>(_memory.data());
@@ -713,7 +714,7 @@ public:
         {
             if (_memory.create() != Error::OK)
             {
-                throw "Shared memory queue could not be created.";
+                throw std::runtime_error("Shared memory queue could not be created.");
             }
 
             // Initialize queue metadata
@@ -727,7 +728,7 @@ public:
         {
             if (_memory.open() != Error::OK)
             {
-                throw "Shared memory queue could not be opened.";
+                throw std::runtime_error("Shared memory queue could not be opened.");
             }
 
             // Read queue metadata
@@ -851,7 +852,7 @@ public:
     {
         if (_isWriter)
         {
-            throw "Cannot peek from a writer queue instance.";
+            throw std::runtime_error("Cannot peek from a writer queue instance.");
         }
 
         if (isEmpty())
