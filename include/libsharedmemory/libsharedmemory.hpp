@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 6
+#define LIBSHAREDMEMORY_VERSION_MINOR 7
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -27,6 +27,8 @@
 #define NOMINMAX 1
 #endif
 #include <windows.h>
+#include <AclAPI.h>
+#include <sddl.h>
 #undef min
 #undef max
 #undef WIN32_LEAN_AND_MEAN
@@ -128,6 +130,74 @@ private:
 
 namespace lsm_windows_detail
 {
+    constexpr std::size_t MAX_FS_PATH = 1024;
+    constexpr int UTIL_PERM_READ = 4;
+    constexpr int UTIL_PERM_WRITE = 2;
+    constexpr int UTIL_PERM_EXECUTE = 1;
+
+    inline bool AssignPermissionsToFilesystemPath(const std::string path, int permissionsBitMask)
+    {
+	    //for simplicity, creator will always have full permissions,
+	    //while group and others will be assigned the same permissions based on the bitmask
+	    char buffer[MAX_FS_PATH] = { 0 };
+	    PSID usersSid = nullptr;
+
+	    if (path.empty() || path.size() >= MAX_FS_PATH)
+		    return false;
+
+	    if (!(permissionsBitMask & (UTIL_PERM_READ | UTIL_PERM_WRITE | UTIL_PERM_EXECUTE)))
+	    {
+		    return false;
+	    }
+
+	    strcpy_s(buffer, sizeof(buffer), path.c_str());
+
+	    if (!ConvertStringSidToSidA("S-1-5-32-545", &usersSid)) //built-in Users
+		    return false;
+
+	    EXPLICIT_ACCESSA accessPermissions = {};
+
+	    accessPermissions.grfAccessPermissions = 0;
+
+	    if (permissionsBitMask & UTIL_PERM_READ)
+	    {
+		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_READ;
+	    }
+
+	    if (permissionsBitMask & UTIL_PERM_WRITE)
+	    {
+		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_WRITE;
+		    accessPermissions.grfAccessPermissions |= DELETE; // this is the natural place to put this if needed later
+	    }
+
+	    if (permissionsBitMask & UTIL_PERM_EXECUTE)
+	    {
+		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_EXECUTE;
+	    }
+
+	    accessPermissions.grfAccessMode = GRANT_ACCESS;
+	    accessPermissions.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+	    accessPermissions.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+	    accessPermissions.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+	    accessPermissions.Trustee.ptstrName = (LPCH)usersSid;
+
+	    PACL acl = nullptr;
+	    DWORD result = SetEntriesInAclA(1, &accessPermissions, nullptr, &acl);
+
+	    if (result != ERROR_SUCCESS)
+	    {
+		    LocalFree(usersSid);
+		    return false;
+	    }
+
+	    result = SetNamedSecurityInfoA(buffer, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
+
+	    LocalFree(usersSid);
+	    LocalFree(acl);
+
+	    return result == ERROR_SUCCESS;
+    }
+
     inline std::string GetSystemStorageDirectory()
     {
         char* programData = nullptr;
@@ -145,6 +215,8 @@ namespace lsm_windows_detail
                 // Directory creation failed
                 return {};
             }
+
+            AssignPermissionsToFilesystemPath(storagePath.string(), UTIL_PERM_READ | UTIL_PERM_WRITE);
 
             return storagePath.string();
         }
@@ -220,6 +292,8 @@ Error Memory::createOrOpen(const bool create)
         {
             return create ? Error::CreationFailed : Error::OpeningFailed;
         }
+
+        lsm_windows_detail::AssignPermissionsToFilesystemPath(_persistFilePath, lsm_windows_detail::UTIL_PERM_READ | lsm_windows_detail::UTIL_PERM_WRITE);
 
         LARGE_INTEGER requiredSize;
         requiredSize.QuadPart = static_cast<LONGLONG>(_size);

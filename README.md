@@ -1,6 +1,10 @@
 # `libsharedmemory`
 
-`libsharedmemory` is a small C++20 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated host OS processes. It also helps inter-connecting modules of applications that are implemented in different programming languages. It allows for simple read/write data transfer using single, indexed memory address access and also using array-types like `std::string`, `float*`, `double*`.
+`libsharedmemory` is a small C++20 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated host OS processes. It also helps inter-connecting modules of applications that are implemented in different programming languages. It supports:
+
+- Simple read/write data transfer using single, indexed memory address access
+- Array-types like `std::string`, `float*`, `double*`
+- Message queue functionality with `SharedMemoryQueue` for FIFO communication
 
 <img src="screenshot.png" width="350px" />
 
@@ -28,6 +32,34 @@ std::string dataString = read$.readString();
 std::cout << "UTF8 string written and read" << dataString << std::endl;
 ```
 
+### Message Queue Example
+
+```cpp
+// Create a message queue with capacity for 10 messages, max 256 bytes each
+SharedMemoryQueue writer{"messageQueue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ true};
+SharedMemoryQueue reader{"messageQueue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ false};
+
+// Enqueue messages from writer
+writer.enqueue("First message");
+writer.enqueue("Second message");
+
+// Dequeue messages from reader
+std::string msg;
+if (reader.dequeue(msg)) {
+    std::cout << "Received: " << msg << std::endl;
+}
+
+// Peek at next message without removing it
+if (reader.peek(msg)) {
+    std::cout << "Next message: " << msg << std::endl;
+}
+
+// Check queue status
+std::cout << "Queue size: " << reader.size() << std::endl;
+std::cout << "Is empty: " << reader.isEmpty() << std::endl;
+std::cout << "Is full: " << reader.isFull() << std::endl;
+```
+
 ## Source code package management via `npm`
 
 In case you want to use this library in your codebase,
@@ -45,27 +77,38 @@ reports that are announced when running `npm audit`. Finally, it's also much
 easier for you to install all project dependencies by just running `npm install`
 in your projects root directory. Managing third party code becomes obsolete at all. 
 
-## Limits
+## Features
 
-`libsharedmemory` does only support the following datatypes (array-like):
-- `std::string`
-- `float*`
-- `double*`
+### Stream-based Transfer
+`libsharedmemory` supports the following datatypes for stream-based transfer:
+- `std::string` (UTF-8 compatible)
+- `float*` (arrays of floats)
+- `double*` (arrays of doubles)
 
 Single value access via `.data()[index]` API:
 - all scalar datatypes supported in C/C++
 
-- This library doesn't care for endinanness. This should be naturally fine
+### Message Queue
+`SharedMemoryQueue` provides FIFO message queue functionality:
+- Thread-safe enqueue/dequeue operations
+- Configurable capacity and maximum message size
+- Peek functionality to inspect messages without removing them
+- Suitable for single producer, single consumer or single producer, multiple consumers patterns
+
+## Limits
+
+- This library doesn't care for endianness. This should be naturally fine
 because shared memory shouldn't be shared between different machine 
 architectures. However, if you plan to copy the shared buffer onto a 
-network layer prototcol, make sure to add an endianess indication bit.
+network layer protocol, make sure to add an endianness indication bit.
 
 - Although the binary memory layout should give you no headache
 when compiling/linking using different compilers, 
 the behavior is undefined.
 
-- At the time of writing, there is no support for shared memory persistency
-on Windows. Shared memory is lost after the writing process is killed.
+- **SharedMemoryQueue** currently works best for single producer, single consumer 
+or single producer, multiple consumers scenarios. Multiple concurrent producers 
+require additional external synchronization.
 
 ## Memory layout
 
@@ -98,5 +141,5 @@ to catch every data change.
 
 ## Roadmap
 
-1) Windows shared memory persistency support
-2) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
+1) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
+2) Support for multiple concurrent producers in SharedMemoryQueue with lock-free atomic operations
