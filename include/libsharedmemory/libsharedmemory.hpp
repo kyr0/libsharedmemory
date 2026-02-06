@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 5
+#define LIBSHAREDMEMORY_VERSION_MINOR 6
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -30,6 +30,8 @@
 #undef min
 #undef max
 #undef WIN32_LEAN_AND_MEAN
+#include <filesystem>
+#include <utility>
 #endif
 
 namespace lsm
@@ -126,6 +128,30 @@ private:
 
 namespace lsm_windows_detail
 {
+    inline std::string GetSystemStorageDirectory()
+    {
+        char* programData = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&programData, &len, "PROGRAMDATA") == 0 && programData != nullptr)
+        {
+            std::filesystem::path storagePath = std::filesystem::path(programData) / "shared_memory";
+            free(programData);
+
+            // Create directory if it doesn't exist
+            std::error_code ec;
+            std::filesystem::create_directories(storagePath, ec);
+            if (ec)
+            {
+                // Directory creation failed
+                return {};
+            }
+
+            return storagePath.string();
+        }
+        // If PROGRAMDATA is not set, return empty string
+        return {};
+    }
+
     inline std::string sanitize_name(const std::string& name)
     {
         std::string sanitized = name;
@@ -143,13 +169,11 @@ namespace lsm_windows_detail
 
     inline std::string persistence_file_path(const std::string& name)
     {
-        char buffer[MAX_PATH] = {0};
-        const DWORD pathLength = GetTempPathA(static_cast<DWORD>(sizeof(buffer)), buffer);
-        std::string basePath(buffer, buffer + pathLength);
+        std::string basePath = GetSystemStorageDirectory();
         if (!basePath.empty())
         {
-            const char last = basePath[basePath.size() - 1];
-            if (last != '\\' && last != '/')
+            if (const char last = basePath[basePath.size() - 1];
+                last != '\\' && last != '/')
             {
                 basePath.push_back('\\');
             }
