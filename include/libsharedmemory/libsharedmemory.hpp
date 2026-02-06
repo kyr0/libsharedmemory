@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 5
+#define LIBSHAREDMEMORY_VERSION_MINOR 6
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -29,6 +29,7 @@
 #undef max
 #undef WIN32_LEAN_AND_MEAN
 #include <filesystem>
+#include <utility>
 #endif
 
 namespace lsm
@@ -166,13 +167,11 @@ namespace lsm_windows_detail
 
     inline std::string persistence_file_path(const std::string& name)
     {
-        char buffer[MAX_PATH] = {0};
-        const DWORD pathLength = GetSystemStorageDirectory();
-        std::string basePath(buffer, buffer + pathLength);
+        std::string basePath = GetSystemStorageDirectory();
         if (!basePath.empty())
         {
-            const char last = basePath[basePath.size() - 1];
-            if (last != '\\' && last != '/')
+            if (const char last = basePath[basePath.size() - 1];
+                last != '\\' && last != '/')
             {
                 basePath.push_back('\\');
             }
