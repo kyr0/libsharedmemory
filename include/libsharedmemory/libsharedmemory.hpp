@@ -28,6 +28,7 @@
 #undef min
 #undef max
 #undef WIN32_LEAN_AND_MEAN
+#include <filesystem>
 #endif
 
 namespace lsm
@@ -92,7 +93,7 @@ public:
 
     [[nodiscard]] std::span<std::byte> as_bytes() const noexcept
     {
-        return std::span<std::byte>(static_cast<std::byte*>(_data), _size);
+        return {static_cast<std::byte*>(_data), _size};
     }
 
     void destroy() const;
@@ -124,6 +125,30 @@ private:
 
 namespace lsm_windows_detail
 {
+    inline std::string GetSystemStorageDirectory()
+    {
+        char* programData = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&programData, &len, "PROGRAMDATA") == 0 && programData != nullptr)
+        {
+            std::filesystem::path storagePath = std::filesystem::path(programData) / "shared_memory";
+            free(programData);
+
+            // Create directory if it doesn't exist
+            std::error_code ec;
+            std::filesystem::create_directories(storagePath, ec);
+            if (ec)
+            {
+                // Directory creation failed
+                return {};
+            }
+
+            return storagePath.string();
+        }
+        // If PROGRAMDATA is not set, return empty string
+        return {};
+    }
+
     inline std::string sanitize_name(const std::string& name)
     {
         std::string sanitized = name;
@@ -142,7 +167,7 @@ namespace lsm_windows_detail
     inline std::string persistence_file_path(const std::string& name)
     {
         char buffer[MAX_PATH] = {0};
-        const DWORD pathLength = GetTempPathA(static_cast<DWORD>(sizeof(buffer)), buffer);
+        const DWORD pathLength = GetSystemStorageDirectory();
         std::string basePath(buffer, buffer + pathLength);
         if (!basePath.empty())
         {
