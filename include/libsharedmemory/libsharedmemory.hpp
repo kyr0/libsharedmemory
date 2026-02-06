@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 7
+#define LIBSHAREDMEMORY_VERSION_MINOR 8
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -137,65 +137,90 @@ namespace lsm_windows_detail
 
     inline bool AssignPermissionsToFilesystemPath(const std::string path, int permissionsBitMask)
     {
-	    //for simplicity, creator will always have full permissions,
-	    //while group and others will be assigned the same permissions based on the bitmask
-	    char buffer[MAX_FS_PATH] = { 0 };
-	    PSID usersSid = nullptr;
+	    	//for simplicity, creator will always have full permissions,
+	//while group and others will be assigned the same permissions based on the bitmask
+	char buffer[MAX_FS_PATH] = { 0 };
+	PSID usersSid = nullptr;
 
-	    if (path.empty() || path.size() >= MAX_FS_PATH)
-		    return false;
+	if (path.empty() || path.size() >= MAX_FS_PATH)
+		return false;
 
-	    if (!(permissionsBitMask & (UTIL_PERM_READ | UTIL_PERM_WRITE | UTIL_PERM_EXECUTE)))
-	    {
-		    return false;
-	    }
+	if (!(permissionsBitMask & (UTIL_PERM_READ | UTIL_PERM_WRITE | UTIL_PERM_EXECUTE)))
+	{
+		return false;
+	}
 
-	    strcpy_s(buffer, sizeof(buffer), path.c_str());
+	strcpy_s(buffer, sizeof(buffer), path.c_str());
 
-	    if (!ConvertStringSidToSidA("S-1-5-32-545", &usersSid)) //built-in Users
-		    return false;
+	if (!ConvertStringSidToSidA("S-1-5-32-545", &usersSid)) //built-in Users
+		return false;
 
-	    EXPLICIT_ACCESSA accessPermissions = {};
+	EXPLICIT_ACCESSA accessPermissions = {};
 
-	    accessPermissions.grfAccessPermissions = 0;
+	accessPermissions.grfAccessPermissions = 0;
 
-	    if (permissionsBitMask & UTIL_PERM_READ)
-	    {
-		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_READ;
-	    }
+	if (permissionsBitMask & UTIL_PERM_READ)
+	{
+		accessPermissions.grfAccessPermissions |= FILE_GENERIC_READ;
+	}
 
-	    if (permissionsBitMask & UTIL_PERM_WRITE)
-	    {
-		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_WRITE;
-		    accessPermissions.grfAccessPermissions |= DELETE; // this is the natural place to put this if needed later
-	    }
+	if (permissionsBitMask & UTIL_PERM_WRITE)
+	{
+		accessPermissions.grfAccessPermissions |= FILE_GENERIC_WRITE;
+		accessPermissions.grfAccessPermissions |= DELETE; // this is the natural place to put this if needed later
+	}
 
-	    if (permissionsBitMask & UTIL_PERM_EXECUTE)
-	    {
-		    accessPermissions.grfAccessPermissions |= FILE_GENERIC_EXECUTE;
-	    }
+	if (permissionsBitMask & UTIL_PERM_EXECUTE)
+	{
+		accessPermissions.grfAccessPermissions |= FILE_GENERIC_EXECUTE;
+	}
 
-	    accessPermissions.grfAccessMode = GRANT_ACCESS;
-	    accessPermissions.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-	    accessPermissions.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-	    accessPermissions.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
-	    accessPermissions.Trustee.ptstrName = (LPCH)usersSid;
+	accessPermissions.grfAccessMode = GRANT_ACCESS;
+	accessPermissions.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+	accessPermissions.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+	accessPermissions.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+	accessPermissions.Trustee.ptstrName = (LPCH)usersSid;
 
-	    PACL acl = nullptr;
-	    DWORD result = SetEntriesInAclA(1, &accessPermissions, nullptr, &acl);
+	// Retrieve existing DACL to merge with new ACE
+	PACL oldDacl = nullptr;
+	PSECURITY_DESCRIPTOR pSD = nullptr;
+	DWORD result = GetNamedSecurityInfoA(
+		buffer,
+		SE_FILE_OBJECT,
+		DACL_SECURITY_INFORMATION,
+		nullptr,
+		nullptr,
+		&oldDacl,
+		nullptr,
+		&pSD
+	);
 
-	    if (result != ERROR_SUCCESS)
-	    {
-		    LocalFree(usersSid);
-		    return false;
-	    }
+	if (result != ERROR_SUCCESS)
+	{
+		LocalFree(usersSid);
+		return false;
+	}
 
-	    result = SetNamedSecurityInfoA(buffer, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, acl, NULL);
+	// Merge new ACE with existing DACL
+	PACL newAcl = nullptr;
+	result = SetEntriesInAclA(1, &accessPermissions, oldDacl, &newAcl);
 
-	    LocalFree(usersSid);
-	    LocalFree(acl);
+	// Free security descriptor (contains oldDacl)
+	if (pSD)
+		LocalFree(pSD);
 
-	    return result == ERROR_SUCCESS;
+	if (result != ERROR_SUCCESS)
+	{
+		LocalFree(usersSid);
+		return false;
+	}
+
+	result = SetNamedSecurityInfoA(buffer, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION, NULL, NULL, newAcl, NULL);
+
+	LocalFree(usersSid);
+	LocalFree(newAcl);
+
+	return result == ERROR_SUCCESS;
     }
 
     inline std::string GetSystemStorageDirectory()
@@ -293,7 +318,22 @@ Error Memory::createOrOpen(const bool create)
             return create ? Error::CreationFailed : Error::OpeningFailed;
         }
 
+        CloseHandle(fileHandle); // will be reopened, this is just to ensure the file exists and has correct permissions
+
         lsm_windows_detail::AssignPermissionsToFilesystemPath(_persistFilePath, lsm_windows_detail::UTIL_PERM_READ | lsm_windows_detail::UTIL_PERM_WRITE);
+
+        fileHandle = CreateFileA(_persistFilePath.c_str(),
+                                        GENERIC_READ | GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                        NULL,
+                                        disposition,
+                                        FILE_ATTRIBUTE_NORMAL,
+                                        NULL);
+
+        if (fileHandle == INVALID_HANDLE_VALUE)
+        {
+            return create ? Error::CreationFailed : Error::OpeningFailed;
+        }
 
         LARGE_INTEGER requiredSize;
         requiredSize.QuadPart = static_cast<LONGLONG>(_size);
