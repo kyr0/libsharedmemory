@@ -491,7 +491,9 @@ inline Error Memory::createOrOpen(const bool create)
 
     const int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
 
-    _fd = shm_open(_path.c_str(), flags, 0755);
+    _fd = shm_open(_path.c_str(), flags, 0777);
+    fchmod(_fd, 0777); //explicit
+       
     if (_fd < 0)
     {
         if (create)
