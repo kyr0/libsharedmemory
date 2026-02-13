@@ -17,6 +17,7 @@
 
 #if defined(__APPLE__) || defined(__linux__) || defined(__unix__) || defined(_POSIX_VERSION) || defined(__ANDROID__)
 #include <fcntl.h>    // O_* constants
+#include <sys/stat.h>
 #include <sys/mman.h> // mmap, munmap
 #include <unistd.h>   // shm functions, close
 #endif
