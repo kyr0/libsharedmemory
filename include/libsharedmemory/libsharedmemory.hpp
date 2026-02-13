@@ -1,7 +1,7 @@
 #pragma once
 
 #define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 8
+#define LIBSHAREDMEMORY_VERSION_MINOR 9
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -493,7 +493,7 @@ inline Error Memory::createOrOpen(const bool create)
 
     _fd = shm_open(_path.c_str(), flags, 0777);
     fchmod(_fd, 0777); //explicit
-       
+
     if (_fd < 0)
     {
         if (create)
