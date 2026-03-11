@@ -5,17 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-03-11
+
+### Added
+- Makefile with `build`, `test`, and `clean` targets wrapping CMake
+- Re-verified current macOS aarch64 (Apple Silicon) support on Sequoia 15.7.3
+
+### Changed
+- Improved README: added supported platforms table, building instructions, tightened examples and documentation
+- Added more detailed documentation for `SharedMemoryQueue` and Windows persistency features in README
+- Added Makefile to simplify setup, build and test processes for developers
+
 ## [1.9.0] - 2026-02-13
 
-### Added:
-
+### Added
 - **Linux**: Default permissions set to 0777.
 
 
 ## [1.8.0] - 2026-02-06
 
-### Added:
-
+### Added
 - **Windows**: ACL inheritance for shared file, clean close/reopen when applying settings.
 
 ## [1.7.0] - 2026-02-06

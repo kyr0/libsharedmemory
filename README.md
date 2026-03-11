@@ -1,127 +1,115 @@
-# `libsharedmemory`
+# libsharedmemory
 
-`libsharedmemory` is a small C++20 header-only library for using shared memory on Windows, Linux and macOS. `libsharedmemory` makes it easy to transfer data between isolated host OS processes. It also helps inter-connecting modules of applications that are implemented in different programming languages. It supports:
+A lightweight, header-only C++20 library for inter-process communication via shared memory. Transfer data between isolated OS processes — or between modules written in different programming languages — with a simple, cross-platform API.
 
-- Simple read/write data transfer using single, indexed memory address access
-- Array-types like `std::string`, `float*`, `double*`
-- Message queue functionality with `SharedMemoryQueue` for FIFO communication
+**Key capabilities:**
+- Stream-based read/write transfer (`std::string`, `float*`, `double*`, scalars)
+- FIFO message queue (`SharedMemoryQueue`) with atomic operations
+- Optional persistence for shared memory segments
+- Change detection via flag bit flipping
 
-<img src="screenshot.png" width="350px" />
+## Supported Platforms
 
-## Example
+| Platform | Architecture |
+|---|---|
+| Windows | x86_64 |
+| Linux | x86_64, aarch64 |
+| macOS | x86_64, aarch64 (Apple Silicon) |
 
-```cpp
+## Building
 
-std::string dataToTransfer = "{ foo: 'coolest IPC ever! 🧑‍💻' }";
+Requires CMake 3.12+ and a C++20 compatible compiler.
 
-// the name of the shared memory is os-wide announced
-// the size is in bytes and must be big enough to handle the data (up to 4GiB)
-// if persistency is disabled, the shared memory segment will
-// be garbage collected when the process that wrote it is killed
-SharedMemoryWriteStream write$ {/*name*/ "jsonPipe", /*size*/ 65535, /*persistent*/ true};
-SharedMemoryReadStream read$ {/*name*/ "jsonPipe", /*size*/ 65535, /*persistent*/ true};
-
-// writing the string to the shared memory
-write$.write(dataToTransfer);
-
-// reading the string from shared memory
-// you can run this in another process, thread,
-// even in another app written in another programming language
-std::string dataString = read$.readString();
-
-std::cout << "UTF8 string written and read" << dataString << std::endl;
+```sh
+make build    # Configure and build (Release)
+make test     # Build and run all tests
+make clean    # Remove build artifacts
 ```
 
-### Message Queue Example
+Or use CMake directly:
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+## Examples
+
+### Stream-based Transfer
 
 ```cpp
-// Create a message queue with capacity for 10 messages, max 256 bytes each
-SharedMemoryQueue writer{"messageQueue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ true};
-SharedMemoryQueue reader{"messageQueue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ false};
+std::string data = R"({ "status": "connected", "protocol": "shm" })";
 
-// Enqueue messages from writer
+// Create writer and reader (name is OS-wide, size in bytes, up to 4 GiB)
+SharedMemoryWriteStream writer{"myChannel", /*size*/ 65535, /*persistent*/ true};
+SharedMemoryReadStream reader{"myChannel", /*size*/ 65535, /*persistent*/ true};
+
+writer.write(data);
+
+// Read from the same or another process, thread, or application
+std::string result = reader.readString();
+```
+
+### Message Queue
+
+```cpp
+SharedMemoryQueue writer{"queue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ true};
+SharedMemoryQueue reader{"queue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ false};
+
 writer.enqueue("First message");
 writer.enqueue("Second message");
 
-// Dequeue messages from reader
 std::string msg;
 if (reader.dequeue(msg)) {
     std::cout << "Received: " << msg << std::endl;
 }
 
-// Peek at next message without removing it
+// Peek without removing
 if (reader.peek(msg)) {
-    std::cout << "Next message: " << msg << std::endl;
+    std::cout << "Next: " << msg << std::endl;
 }
 
-// Check queue status
-std::cout << "Queue size: " << reader.size() << std::endl;
-std::cout << "Is empty: " << reader.isEmpty() << std::endl;
-std::cout << "Is full: " << reader.isFull() << std::endl;
+std::cout << "Size: " << reader.size() << ", Empty: " << reader.isEmpty() << std::endl;
 ```
-
-## Source code package management via `npm`
-
-In case you want to use this library in your codebase,
-you could just copy & paste the `include/libsharedmemory/libsharedmemory.hpp` into your `include` or `deps` directory. But then you'd have to manually manage the code base.
-
-However, you could also use `npm` for a smarter dependency management approach.
-Therefore, install [Node.js](https://www.nodejs.org) which comes bundled with `npm`, the Node package manager.
-
-Now run `npm init` in your project root directoy.
-After initial setup, run `npm install cpp_libsharedmemory` and add `node_modules/cpp_libsharedmemory/include/libsharedmemory` to your include path.
-
-Whenever this library updates, you can also update your dependencies via
-`npm upgrade`. Futhermore, people who audit the code can announce security 
-reports that are announced when running `npm audit`. Finally, it's also much
-easier for you to install all project dependencies by just running `npm install`
-in your projects root directory. Managing third party code becomes obsolete at all. 
 
 ## Features
 
 ### Stream-based Transfer
-`libsharedmemory` supports the following datatypes for stream-based transfer:
-- `std::string` (UTF-8 compatible)
-- `float*` (arrays of floats)
-- `double*` (arrays of doubles)
-
-Single value access via `.data()[index]` API:
-- all scalar datatypes supported in C/C++
+- `std::string` (UTF-8 compatible), `float*`, `double*` arrays
+- Single value access via `.data()[index]` for all C/C++ scalar types
+- Change detection with automatic flag bit flipping
 
 ### Message Queue
-`SharedMemoryQueue` provides FIFO message queue functionality:
-- Thread-safe enqueue/dequeue operations
+- Thread-safe enqueue/dequeue using atomic counters
 - Configurable capacity and maximum message size
-- Peek functionality to inspect messages without removing them
-- Suitable for single producer, single consumer or single producer, multiple consumers patterns
+- Peek functionality to inspect without consuming
+- Supports single-producer/single-consumer and single-producer/multiple-consumer patterns
 
-## Limits
+## Installation
 
-- This library doesn't care for endianness. This should be naturally fine
-because shared memory shouldn't be shared between different machine 
-architectures. However, if you plan to copy the shared buffer onto a 
-network layer protocol, make sure to add an endianness indication bit.
+Copy `include/libsharedmemory/libsharedmemory.hpp` into your project's include path — it's a single header.
 
-- Although the binary memory layout should give you no headache
-when compiling/linking using different compilers, 
-the behavior is undefined.
+Alternatively, use `npm` for dependency management:
 
-- **SharedMemoryQueue** currently works best for single producer, single consumer 
-or single producer, multiple consumers scenarios. Multiple concurrent producers 
-require additional external synchronization.
+```sh
+npm init                          # If not already initialized
+npm install cpp_libsharedmemory   # Install the library
+```
 
-## Memory layout
+Then add `node_modules/cpp_libsharedmemory/include/libsharedmemory` to your include path. Use `npm upgrade` to pull updates and `npm audit` to check for security advisories.
 
-When writing data into a named shared memory segment, `libsharedmemory`
-does write 5 bytes of meta information:
+## Memory Layout
 
-- `flags` (`char`) is a bitmask that indicates data change (via an odd/even bit flip) as well as the data type transferred (1 byte)
-- `size` (`int`) indicates the buffer size in bytes (4 bytes)
+Each named shared memory segment includes 5 bytes of metadata:
 
-Therefore the binary memory layout is:
-`|flags|size|data|`
+| Field | Type | Size | Description |
+|---|---|---|---|
+| `flags` | `char` | 1 byte | Bitmask: change indicator + data type |
+| `size` | `int` | 4 bytes | Buffer size in bytes |
 
-The following datatype flags are defined:
+Binary layout: `|flags|size|data|`
+
 ```c
 enum DataType {
   kMemoryChanged = 1,
@@ -131,15 +119,19 @@ enum DataType {
 };
 ```
 
-`kMemoryChanged` is the change indicator bit. It will flip odd/evenly
-to indicate data change. Continuous data reader will thus be able 
-to catch every data change. 
+`kMemoryChanged` flips odd/even to signal data changes, allowing continuous readers to detect every update.
 
-## License
+## Limits
 
-`libsharedmemory` is released under the MIT license, see the `LICENSE` file.
+- **Endianness** is not handled. This is fine for local shared memory but requires attention if copying buffers to a network protocol.
+- **Cross-compiler** behavior for the binary memory layout is undefined.
+- **SharedMemoryQueue** works best with a single producer. Multiple concurrent producers require external synchronization.
 
 ## Roadmap
 
-1) Multi-threaded non-blocking `onChange( lambda fn )` data change handler on the read stream
-2) Support for multiple concurrent producers in SharedMemoryQueue with lock-free atomic operations
+1. Non-blocking `onChange(lambda)` handler on the read stream
+2. Lock-free multi-producer support for `SharedMemoryQueue`
+
+## License
+
+MIT — see [LICENSE](LICENSE).
