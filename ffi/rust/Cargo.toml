@@ -1,0 +1,14 @@
+[package]
+name = "libsharedmemory"
+version = "1.10.0"
+edition = "2021"
+description = "Rust FFI bindings for libsharedmemory – a cross-platform C++20 shared memory library"
+license = "MIT"
+links = "lsm_c"
+
+[build-dependencies]
+cc = "1"
+
+[[example]]
+name = "shared_memory"
+path = "examples/shared_memory.rs"

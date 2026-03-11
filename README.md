@@ -102,10 +102,39 @@ int main(void)
 }
 ```
 
+### Rust FFI (interop with C++)
+
+The `ffi/rust/` crate provides safe Rust bindings that link against the C wrapper at build time via `cc`. No separate C++ build step is needed - `cargo build` compiles everything.
+
+```rust
+use libsharedmemory::SharedMemory;
+
+fn main() {
+    // Writer: create a shared memory segment
+    let writer = SharedMemory::create("rustExample", 256, true)
+        .expect("Failed to create shared memory");
+    writer.as_mut_slice()[..16].copy_from_slice(b"Hello from Rust!");
+
+    // Reader: open the same segment (could be a C++ process on the other end)
+    let reader = SharedMemory::open("rustExample", 256, true)
+        .expect("Failed to open shared memory");
+    println!("{}", std::str::from_utf8(&reader.as_slice()[..16]).unwrap());
+}
+```
+
+```sh
+cd ffi/rust
+make setup      # Set Rust toolchain to stable
+make build      # Compile the crate (includes C++ wrapper)
+make test       # Run unit tests
+make example    # Run the shared_memory example
+```
+
 ### Running the Examples
 
 ```sh
-make examples   # Build and run all examples (stream, queue, raw C)
+make examples                # Build and run all examples (stream, queue, raw C)
+cd ffi/rust && make example  # Rust FFI example
 ```
 
 ## Features
@@ -179,6 +208,7 @@ Not yet. `enqueue()` uses a non-atomic read-modify-write on the write index. Two
 
 1. Non-blocking `onChange(lambda)` handler on the read stream
 2. Lock-free multi-producer support for `SharedMemoryQueue`
+3. FFI bindings for additional languages (Python, Node.js, etc.)
 
 ## License
 

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `example/` directory with three runnable examples: stream transfer (C++), message queue (C++), and raw shared memory (C via `lsm_c` wrapper)
 - `make examples` target to build and run all examples
 - Pure C wrapper (`lsm_c.h` / `lsm_c.cpp`) exposing `Memory` as opaque-handle C functions
+- Rust FFI bindings (`ffi/rust/`) with safe `SharedMemory` wrapper, unit tests, and runnable example
+- `ffi/rust/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation
