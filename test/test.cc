@@ -712,6 +712,168 @@ const lest::test specification[] =
 
         writer.close();
         writer.destroy();
+    },
+
+    CASE("Memory accessors: size, path, as_bytes")
+    {
+        Memory mem{"accessorTest", 256, true};
+        EXPECT(Error::OK == mem.create());
+
+        EXPECT(mem.size() == 256UL);
+        // Path is normalized with a leading '/' on POSIX
+        EXPECT(mem.path().find("accessorTest") != std::string::npos);
+        EXPECT(mem.data() != nullptr);
+
+        auto bytes = mem.as_bytes();
+        EXPECT(bytes.size() == 256UL);
+        EXPECT(bytes.data() == static_cast<std::byte*>(mem.data()));
+
+        log_test_message("Memory accessors (size, path, as_bytes): SUCCESS");
+
+        mem.close();
+        mem.destroy();
+    },
+
+    CASE("getWriteFlags toggles change bit and sets type")
+    {
+        // First write: no previous flags -> change bit ON, type set
+        char flags1 = SharedMemoryWriteStream::getWriteFlags(kMemoryTypeString, 0);
+        EXPECT(!!(flags1 & kMemoryChanged));
+        EXPECT(!!(flags1 & kMemoryTypeString));
+
+        // Second write: change bit was ON -> toggles OFF, type preserved
+        char flags2 = SharedMemoryWriteStream::getWriteFlags(kMemoryTypeString, flags1);
+        EXPECT(!(flags2 & kMemoryChanged));
+        EXPECT(!!(flags2 & kMemoryTypeString));
+
+        // Third write: change bit was OFF -> toggles ON
+        char flags3 = SharedMemoryWriteStream::getWriteFlags(kMemoryTypeString, flags2);
+        EXPECT(!!(flags3 & kMemoryChanged));
+
+        // Float type flag
+        char flagsFloat = SharedMemoryWriteStream::getWriteFlags(kMemoryTypeFloat, 0);
+        EXPECT(!!(flagsFloat & kMemoryTypeFloat));
+        EXPECT(!(flagsFloat & kMemoryTypeString));
+
+        // Double type flag
+        char flagsDouble = SharedMemoryWriteStream::getWriteFlags(kMemoryTypeDouble, 0);
+        EXPECT(!!(flagsDouble & kMemoryTypeDouble));
+        EXPECT(!(flagsDouble & kMemoryTypeFloat));
+
+        log_test_message("getWriteFlags toggle and type logic: SUCCESS");
+    },
+
+    CASE("Write and read float/double arrays via std::span overload")
+    {
+        std::vector<float> floats = {1.0f, 2.5f, 3.14f, -0.5f, 100.0f};
+        std::vector<double> doubles = {1.0, 2.718281828, 3.14159265, -42.0};
+
+        SharedMemoryWriteStream writer{"spanPipe", 65535, true};
+        SharedMemoryReadStream reader{"spanPipe", 65535, true};
+
+        writer.write(std::span<const float>(floats));
+        EXPECT(reader.readLength(kMemoryTypeFloat) == 5UL);
+        float* readFloats = reader.readFloatArray();
+        for (size_t i = 0; i < floats.size(); ++i) {
+            EXPECT(floats[i] == readFloats[i]);
+        }
+        delete[] readFloats;
+
+        writer.write(std::span<const double>(doubles));
+        EXPECT(reader.readLength(kMemoryTypeDouble) == 4UL);
+        double* readDoubles = reader.readDoubleArray();
+        for (size_t i = 0; i < doubles.size(); ++i) {
+            EXPECT(doubles[i] == readDoubles[i]);
+        }
+        delete[] readDoubles;
+
+        log_test_message("std::span<float/double> write overloads: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("Overwriting same segment reads latest data")
+    {
+        SharedMemoryWriteStream writer{"overwritePipe", 1024, true};
+        SharedMemoryReadStream reader{"overwritePipe", 1024, true};
+
+        writer.write("first");
+        EXPECT(reader.readString() == "first");
+
+        writer.write("second value, longer");
+        EXPECT(reader.readString() == "second value, longer");
+
+        writer.write("x");
+        EXPECT(reader.readString() == "x");
+
+        log_test_message("Overwrite same segment reads latest: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: capacity=1 edge case")
+    {
+        SharedMemoryQueue writer{"cap1Queue", 1, 64, true, true};
+        SharedMemoryQueue reader{"cap1Queue", 1, 64, true, false};
+
+        EXPECT(writer.isEmpty());
+        EXPECT(writer.capacity() == 1);
+
+        EXPECT(writer.enqueue("only slot"));
+        EXPECT(writer.isFull());
+        EXPECT(writer.size() == 1);
+        EXPECT(!writer.enqueue("rejected"));
+
+        std::string msg;
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "only slot");
+        EXPECT(reader.isEmpty());
+
+        // Can enqueue again after dequeue
+        EXPECT(writer.enqueue("reuse slot"));
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == "reuse slot");
+
+        log_test_message("SharedMemoryQueue: capacity=1 edge case: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
+    CASE("SharedMemoryQueue: message at maxMessageSize boundary")
+    {
+        constexpr std::uint32_t maxMsgSize = 32;
+        SharedMemoryQueue writer{"boundaryQueue", 5, maxMsgSize, true, true};
+        SharedMemoryQueue reader{"boundaryQueue", 5, maxMsgSize, true, false};
+
+        // Exactly maxMessageSize bytes
+        std::string exact(maxMsgSize, 'A');
+        EXPECT(writer.enqueue(exact));
+
+        std::string msg;
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == exact);
+
+        // One byte over maxMessageSize should throw
+        std::string tooLong(maxMsgSize + 1, 'B');
+        EXPECT_THROWS(writer.enqueue(tooLong));
+
+        // One byte under maxMessageSize should succeed
+        std::string almostFull(maxMsgSize - 1, 'C');
+        EXPECT(writer.enqueue(almostFull));
+        EXPECT(reader.dequeue(msg));
+        EXPECT(msg == almostFull);
+
+        log_test_message("SharedMemoryQueue: maxMessageSize boundary: SUCCESS");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
     }
 
     // NOTE: Multiple concurrent producers accessing the same SharedMemoryQueue instance

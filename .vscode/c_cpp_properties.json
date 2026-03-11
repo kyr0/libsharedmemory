@@ -1,0 +1,13 @@
+{
+	"configurations": [
+		{
+			"name": "libsharedmemory C++ Default macOS aarch64",
+			"includePath": ["${workspaceFolder}/include"],
+			"compileCommands": "${workspaceFolder}/build/compile_commands.json",
+			"cStandard": "c17",
+			"cppStandard": "c++20",
+			"intelliSenseMode": "macos-clang-arm64"
+		}
+	],
+	"version": 4
+}

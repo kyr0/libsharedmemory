@@ -8,8 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.10.0] - 2026-03-11
 
 ### Added
-- Makefile with `build`, `test`, and `clean` targets wrapping CMake
+- Makefile with `build`, `test`, `clean`, and `setup` targets wrapping CMake
 - Re-verified current macOS aarch64 (Apple Silicon) support on Sequoia 15.7.3
+- 6 new test cases: `Memory` accessors, `getWriteFlags` logic, `std::span` write overloads, segment overwrite, queue capacity=1 edge case, `maxMessageSize` boundary
+- `.vscode/c_cpp_properties.json` for C++20 IntelliSense on macOS (arm64/aarch64)
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation
