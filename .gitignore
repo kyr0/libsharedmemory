@@ -11,3 +11,6 @@ target
 # Zig
 zig-out
 .zig-cache
+
+# Go
+ffi/go/lib/

@@ -164,12 +164,48 @@ make test       # Run unit tests
 make example    # Run the shared_memory example
 ```
 
+### Go FFI (interop with C++)
+
+The `ffi/go/` package uses cgo to link against the C wrapper. The Makefile compiles `lsm_c.cpp` into a static library, then `go build` links it automatically.
+
+```go
+package main
+
+import (
+	"fmt"
+	lsm "libsharedmemory"
+)
+
+func main() {
+	// Writer: create a shared memory segment
+	writer, _ := lsm.Create("goExample", 256, true)
+	defer writer.Close()
+
+	writer.Write([]byte("Hello from Go!"))
+
+	// Reader: open the same segment (could be a C++ process on the other end)
+	reader, _ := lsm.Open("goExample", 256, true)
+	defer reader.Close()
+
+	fmt.Printf("Received: %s\n", reader.Data()[:14])
+}
+```
+
+```sh
+cd ffi/go
+make setup      # Install Go (auto-detects OS package manager)
+make build      # Compile C++ wrapper + go build
+make test       # Run unit tests
+make example    # Run the shared_memory example
+```
+
 ### Running the Examples
 
 ```sh
 make examples                # Build and run all examples (stream, queue, raw C)
 cd ffi/rust && make example  # Rust FFI example
 cd ffi/zig && make example   # Zig FFI example
+cd ffi/go && make example    # Go FFI example
 ```
 
 ## Features

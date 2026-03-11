@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ffi/rust/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
 - Zig FFI bindings (`ffi/zig/`) with idiomatic `SharedMemory` wrapper, unit tests, and runnable example (Zig 0.15+)
 - `ffi/zig/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
+- Go FFI bindings (`ffi/go/`) via cgo with `SharedMemory` wrapper, unit tests, and runnable example
+- `ffi/go/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation
