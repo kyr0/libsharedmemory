@@ -1,0 +1,143 @@
+name: Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        build_type: [Release]
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@master
+
+      - name: Configure CMake
+        run: cmake -B build
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: cmake --build build --config Release --target run_test
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine library version
+        id: version
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          header = Path('include/libsharedmemory/libsharedmemory.hpp').read_text(encoding='utf-8')
+
+          def macro(name: str) -> str:
+              match = re.search(rf'#define\s+{name}\s+(\d+)', header)
+              if not match:
+                  raise SystemExit(f'Macro {name} not found in header')
+              return match.group(1)
+
+          major = macro('LIBSHAREDMEMORY_VERSION_MAJOR')
+          minor = macro('LIBSHAREDMEMORY_VERSION_MINOR')
+          patch = macro('LIBSHAREDMEMORY_VERSION_PATCH')
+          version = f'v{major}.{minor}.{patch}'
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\n')
+          PY
+
+      - name: Check if tag already exists
+        id: tag_check
+        run: |
+          git fetch --tags --force
+          if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >>"$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "exists=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+      - name: Generate release notes
+        if: steps.tag_check.outputs.exists == 'false'
+        id: notes
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+
+          def git_output(args):
+              result = subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+              return result.stdout.strip()
+
+          last_tag = ""
+          try:
+              last_tag = git_output(["git", "describe", "--tags", "--abbrev=0"])
+          except subprocess.CalledProcessError:
+              last_tag = ""
+
+          if last_tag:
+              log_range = f"{last_tag}..HEAD"
+          else:
+              log_range = "HEAD"
+
+          try:
+              notes = git_output(["git", "log", log_range, "--pretty=format:- %s (%h)"])
+          except subprocess.CalledProcessError:
+              notes = ""
+
+          notes = notes.strip()
+          if not notes:
+              notes = "No commits since previous release."
+
+          if last_tag:
+              header = f"Changes since {last_tag}:"
+          else:
+              header = "Changes since repository start:"
+
+          body = f"{header}\n\n{notes}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write("body<<EOF\n")
+              fh.write(body)
+              fh.write("\nEOF\n")
+          PY
+
+      - name: Create GitHub release
+        if: steps.tag_check.outputs.exists == 'false'
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.version.outputs.version }}
+          commitish: ${{ github.sha }}
+          body: ${{ steps.notes.outputs.body }}
+          draft: false
+          prerelease: false
