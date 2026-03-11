@@ -4,6 +4,11 @@ target_link_libraries(lsm_test PUBLIC lsm)
 target_include_directories(lsm_test PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
 set_property(TARGET lsm_test PROPERTY CXX_STANDARD 20)
 
+add_executable(lsm_bench benchmark_contention.cc)
+target_link_libraries(lsm_bench PUBLIC lsm)
+target_include_directories(lsm_bench PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+set_property(TARGET lsm_bench PROPERTY CXX_STANDARD 20)
+
 if(MSVC)
     target_compile_definitions(lsm_test PRIVATE TYPE_SAFE_TEST_NO_STATIC_ASSERT)
 elseif(CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5.0)
@@ -16,4 +21,10 @@ add_custom_target(run_test
         COMMAND lsm_test
         DEPENDS lsm_test
         WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
+)
+
+add_custom_target(run_bench
+    COMMAND lsm_bench
+    DEPENDS lsm_bench
+    WORKING_DIRECTORY ${CMAKE_PROJECT_DIR}
 )

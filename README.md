@@ -31,6 +31,7 @@ make setup    # Install cmake (auto-detects OS package manager)
 make build    # Configure and build (Release)
 make test     # Build and run all tests
 make examples # Build and run all examples (stream, queue, raw C)
+make bench    # Build and run contention benchmark
 make clean    # Remove build artifacts
 ```
 
@@ -41,6 +42,42 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+## Benchmark (Contention)
+
+Previously, this library did not support multiple writers or producers, so contention was not a concern. With v2.0.0's new locking mechanisms for correctness under concurrent access, we expect some performance drop under contention **for multi-threaded workloads**. However, single-writer/single-producer performance **should remain largely unaffected**.
+
+Run benchmark:
+
+```sh
+make bench
+```
+
+Latest local sample (macOS 15, MacBook Air M4):
+
+- Stream writers:
+
+  - 1 thread: 9.14M ops/s (baseline)
+  - 4 threads: 8.59M ops/s (6.1% drop vs 1t)
+  - 8 threads: 6.32M ops/s (30.9% drop vs 1t)
+
+- Queue producers:
+
+  - 1 thread: 5.24M ops/s (baseline)
+  - 2 threads: 4.40M ops/s (16.1% drop)
+  - 4 threads: 3.95M ops/s (24.7% drop)
+  - 8 threads: 3.38M ops/s (35.5% drop)
+
+- Queue consumers:
+
+  - 1 thread: 7.13M ops/s (baseline)
+  - 2 threads: 5.77M ops/s (19.1% drop)
+  - 4 threads: 4.20M ops/s (41.1% drop)
+  - 8 threads: 3.44M ops/s (51.8% drop)
+
+Notes:
+- Results are machine-dependent and workload-dependent.
+- Minor non-monotonic scaling at low thread counts is possible due to scheduler/cache effects.
 
 ## Third-party integrations
 
@@ -223,13 +260,13 @@ cd ffi/go && make example    # Go FFI example
 ### Stream-based Transfer
 - `std::string` (UTF-8 compatible), `float*`, `double*` arrays
 - Single value access via `.data()[index]` for all C/C++ scalar types
-- Change detection with automatic flag bit flipping
+- Revision/ack-based change detection with writer/reader synchronization for contention safety
 
 ### Message Queue
-- Thread-safe enqueue/dequeue using atomic counters
+- Thread-safe enqueue/dequeue using atomic counters and shared producer/consumer locks
 - Configurable capacity and maximum message size
 - Peek functionality to inspect without consuming
-- Supports single-producer/single-consumer and single-producer/multiple-consumer patterns
+- Supports multi-producer and multi-consumer contention safety in the current wire format
 
 ## Integration (C++ codebase)
 
@@ -239,15 +276,19 @@ Copy `include/libsharedmemory/libsharedmemory.hpp` into your project's include p
 
 ### Stream (`SharedMemoryWriteStream` / `SharedMemoryReadStream`)
 
-Each named shared memory segment includes 5 bytes of metadata:
+Each named shared memory segment includes extended metadata in v2.0.0:
 
 | Field | Type | Size | Description |
 |---|---|---|---|
-| `flags` | `char` | 1 byte | Bitmask: change indicator + data type |
+| `flags` | `char` | 1 byte | Data type + compatibility change bit |
+| `padding` | `char[3]` | 3 bytes | Align metadata fields to 4-byte boundary |
+| `revision` | `uint32` | 4 bytes | Monotonic write revision counter |
+| `ack` | `uint32` | 4 bytes | Last revision acknowledged by reader |
 | `size` | `uint32` | 4 bytes | Payload size in bytes |
+| `lock` | `atomic<uint32>` | 4 bytes | Shared stream lock for coherent reads/writes |
 | `data` | `byte[]` | variable | Payload (string, float[], double[]) |
 
-Binary layout: `|flags(1)|size(4)|data(...)|`
+Binary layout: `|flags(1)|pad(3)|revision(4)|ack(4)|size(4)|lock(4)|data(...)|`
 
 ```c
 enum DataType {
@@ -376,18 +417,11 @@ No. **Endianness** is not handled. This is fine for local shared memory but requ
 
 ### Can I use this with multiple writers?
 
-Maybe for slow writers, **if you are lucky**.
-**Concurrent writers**(`SharedMemoryWriteStream`) are currently not safely supported. `write()` performs 3 non-atomic `memcpy` calls (flags, size, data). Two threads writing to the same segment can interleave these operations, producing torn reads with mixed content or incorrect sizes. Use a single writer per segment or add external synchronization.
+**Yes!**, since v2.0.0! Stream writers are serialized with a shared lock and readers use coherent snapshots, so contention does not produce torn payloads in the current stress tests.
 
 ### Are multiple producers supported for `SharedMemoryQueue`?
 
-Not yet. `enqueue()` uses a non-atomic read-modify-write on the write index. Two threads calling `enqueue()` on the same queue will read the same slot index, overwrite each other's data, and advance the index only once - causing **message corruption** in testing (up to 45% on macOS 15.7, aarch64, Macbook Air M4, 1000 messages, 2 producers). Use a single producer per queue or add a mutex around `enqueue()`.
-
-## Roadmap
-
-1. Non-blocking `onChange(lambda)` handler on the read stream
-2. Lock-free multi-producer support for `SharedMemoryQueue`
-3. FFI bindings for additional languages (Python, Node.js, etc.)
+**Yes!**, since v2.0.0! Queue producers are serialized with a shared producer lock and consumers with a shared consumer lock, preventing index/slot races under concurrent access.
 
 ## License
 

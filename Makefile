@@ -1,4 +1,4 @@
-.PHONY: build test examples clean setup
+.PHONY: build test examples bench clean setup
 
 build:
 	cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -11,6 +11,10 @@ examples: build
 	@echo "--- stream ---"  && ./build/example/example_stream
 	@echo "--- queue ---"   && ./build/example/example_queue
 	@echo "--- raw (C) ---" && ./build/example/example_raw
+
+bench: build
+	cmake --build build --target lsm_bench
+	./build/test/lsm_bench
 
 clean:
 	rm -rf build

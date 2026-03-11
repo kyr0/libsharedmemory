@@ -885,10 +885,10 @@ const lest::test specification[] =
         writer.destroy();
     },
 
-    // Regression test for Issue #3 semantics: if writers publish again before
-    // readers acknowledge (markAsRead), hasNewData() must still report unread
-    // data (revision-based detection, not single-bit toggle behavior).
-    CASE("Regression: hasNewData stays true when writes outpace reader ack")
+    // Regression guard for Issue #3: if writers publish again before readers
+    // acknowledge (markAsRead), hasNewData() must still report unread data
+    // (revision-based detection, not single-bit toggle behavior).
+    CASE("Issue #3 fixed: hasNewData remains true before ack")
     {
         SharedMemoryWriteStream writer{"regressIssue3Pipe", 1024, true};
         SharedMemoryReadStream reader{"regressIssue3Pipe", 1024, true};
@@ -905,7 +905,7 @@ const lest::test specification[] =
         reader.markAsRead();
         EXPECT(!reader.hasNewData());
 
-        log_test_message("Issue #3 regression: unread update remains visible before ack: FIXED");
+        log_test_message("Issue #3 fixed behavior validated: unread update visible before ack");
 
         writer.close();
         reader.close();

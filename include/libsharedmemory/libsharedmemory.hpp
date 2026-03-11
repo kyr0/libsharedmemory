@@ -931,7 +931,7 @@ private:
 
 /**
  * @brief Queue structure for shared memory
- * Layout: [writeIndex(4)][readIndex(4)][capacity(4)][count(4)][maxMessageSize(4)][producerLock(4)][messages...]
+ * Layout: [writeIndex(4)][readIndex(4)][capacity(4)][count(4)][maxMessageSize(4)][producerLock(4)][consumerLock(4)][messages...]
  */
 class SharedMemoryQueue
 {
@@ -942,7 +942,8 @@ private:
     static constexpr std::size_t kCountOffset = 12;
     static constexpr std::size_t kMaxMessageSizeOffset = 16;
     static constexpr std::size_t kProducerLockOffset = 20;
-    static constexpr std::size_t kHeaderSize = 24;
+    static constexpr std::size_t kConsumerLockOffset = 24;
+    static constexpr std::size_t kHeaderSize = 28;
 
     Memory _memory;
     std::uint32_t _capacity;
@@ -982,6 +983,12 @@ private:
         return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[kProducerLockOffset]);
     }
 
+    [[nodiscard]] std::atomic<std::uint32_t>& atomicConsumerLock() const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[kConsumerLockOffset]);
+    }
+
     void lockProducer() const noexcept
     {
         std::uint32_t expected = 0;
@@ -996,6 +1003,22 @@ private:
     void unlockProducer() const noexcept
     {
         atomicProducerLock().store(0, std::memory_order_release);
+    }
+
+    void lockConsumer() const noexcept
+    {
+        std::uint32_t expected = 0;
+        while (!atomicConsumerLock().compare_exchange_weak(
+                   expected, 1, std::memory_order_acquire, std::memory_order_relaxed))
+        {
+            expected = 0;
+            std::this_thread::yield();
+        }
+    }
+
+    void unlockConsumer() const noexcept
+    {
+        atomicConsumerLock().store(0, std::memory_order_release);
     }
 
 public:
@@ -1030,6 +1053,7 @@ public:
             new (&memory[kCountOffset]) std::atomic<std::uint32_t>(0);
             writeUInt32(kMaxMessageSizeOffset, maxMessageSize);
             new (&memory[kProducerLockOffset]) std::atomic<std::uint32_t>(0);
+            new (&memory[kConsumerLockOffset]) std::atomic<std::uint32_t>(0);
         }
         else
         {
@@ -1125,8 +1149,11 @@ public:
             throw std::runtime_error("Cannot dequeue from a writer queue instance.");
         }
 
+        lockConsumer();
+
         if (isEmpty())
         {
+            unlockConsumer();
             return false;
         }
 
@@ -1150,6 +1177,8 @@ public:
         // atomic decrement of count
         atomicCount().fetch_sub(1, std::memory_order_release);
 
+        unlockConsumer();
+
         return true;
     }
 
@@ -1165,8 +1194,11 @@ public:
             throw std::runtime_error("Cannot peek from a writer queue instance.");
         }
 
+        lockConsumer();
+
         if (isEmpty())
         {
+            unlockConsumer();
             return false;
         }
 
@@ -1182,6 +1214,8 @@ public:
         // Read message data
         message.resize(messageLength);
         std::memcpy(&message[0], &memory[offset + sizeof(std::uint32_t)], messageLength);
+
+        unlockConsumer();
 
         return true;
     }
