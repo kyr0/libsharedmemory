@@ -164,7 +164,7 @@ make test       # Run unit tests
 make example    # Run the shared_memory example
 ```
 
-### Go FFI (interop with C++)
+### Go FFI (interop with C)
 
 The `ffi/go/` package uses cgo to link against the C wrapper. The Makefile compiles `lsm_c.cpp` into a static library, then `go build` links it automatically.
 
@@ -221,33 +221,27 @@ cd ffi/go && make example    # Go FFI example
 - Peek functionality to inspect without consuming
 - Supports single-producer/single-consumer and single-producer/multiple-consumer patterns
 
-## Installation
+## Integration (C++ codebase)
 
 Copy `include/libsharedmemory/libsharedmemory.hpp` into your project's include path - it's a single header.
 
-Alternatively, use `npm` for dependency management:
-
-```sh
-npm init                          # If not already initialized
-npm install cpp_libsharedmemory   # Install the library
-```
-
-Then add `node_modules/cpp_libsharedmemory/include/libsharedmemory` to your include path. Use `npm upgrade` to pull updates and `npm audit` to check for security advisories.
-
 ## Memory Layout
+
+### Stream (`SharedMemoryWriteStream` / `SharedMemoryReadStream`)
 
 Each named shared memory segment includes 5 bytes of metadata:
 
 | Field | Type | Size | Description |
 |---|---|---|---|
 | `flags` | `char` | 1 byte | Bitmask: change indicator + data type |
-| `size` | `int` | 4 bytes | Buffer size in bytes |
+| `size` | `uint32` | 4 bytes | Payload size in bytes |
+| `data` | `byte[]` | variable | Payload (string, float[], double[]) |
 
-Binary layout: `|flags|size|data|`
+Binary layout: `|flags(1)|size(4)|data(...)|`
 
 ```c
 enum DataType {
-  kMemoryChanged = 1,
+  kMemoryChanged = 1,   // flips odd/even per write
   kMemoryTypeString = 2,
   kMemoryTypeFloat = 4,
   kMemoryTypeDouble = 8,
@@ -255,6 +249,110 @@ enum DataType {
 ```
 
 `kMemoryChanged` flips odd/even to signal data changes, allowing continuous readers to detect every update.
+
+### Queue (`SharedMemoryQueue`)
+
+| Field | Type | Offset | Description |
+|---|---|---|---|
+| `writeIndex` | `uint32` | 0 | Next slot to write |
+| `readIndex` | `uint32` | 4 | Next slot to read |
+| `capacity` | `uint32` | 8 | Max number of messages |
+| `count` | `atomic<uint32>` | 12 | Current message count |
+| `maxMessageSize` | `uint32` | 16 | Max bytes per message |
+| `messages` | slot[] | 20+ | `capacity` × `[length(4)\|data(maxMessageSize)]` |
+
+Binary layout: 
+`|header(20)|slot0|slot1|...|slotN|` where each slot is: 
+`|length(4)|data(maxMessageSize)|`
+
+## Architecture
+
+### Stream: Single Producer to Single Consumer
+
+```mermaid
+flowchart LR
+    subgraph "Process A (Writer)"
+        W[SharedMemoryWriteStream]
+    end
+
+    subgraph "OS Shared Memory"
+        SHM["Named Segment\n|flags|size|data|"]
+    end
+
+    subgraph "Process B (Reader)"
+        R[SharedMemoryReadStream]
+    end
+
+    W -- "write()" --> SHM
+    SHM -- "readString()" --> R
+```
+
+### Queue: Single Producer to Consumer(s)
+
+```mermaid
+flowchart LR
+    subgraph "Process A (Producer)"
+        P[SharedMemoryQueue isWriter=true]
+    end
+
+    subgraph "OS Shared Memory"
+        Q["Named Segment |header|slot0|slot1|...|slotN|"]
+    end
+
+    subgraph "Process B (Consumer)"
+        C1[SharedMemoryQueue isWriter=false]
+    end
+
+    P -- "enqueue()" --> Q
+    Q -- "dequeue()" --> C1
+```
+
+### FFI: Cross-Language Interop
+
+```mermaid
+flowchart TB
+    subgraph "C++20 Header-Only Library"
+        LIB["libsharedmemory.hpp Memory - Stream - Queue"]
+    end
+
+    subgraph "C Wrapper"
+        CWRAP["lsm_c.h / lsm_c.cpp extern &quot;C&quot; functions"]
+    end
+
+    LIB --> CWRAP
+
+    CWRAP --> RUST["Rust (ffi/rust)"]
+    CWRAP --> ZIG["Zig (ffi/zig)"]
+    CWRAP --> GO["Go via cgo (ffi/go)"]
+    CWRAP --> C["Pure C lsm_c.h"]
+```
+
+### Platform Backends
+
+```mermaid
+flowchart TD
+    MEM["lsm::Memory"]
+
+    MEM -->|"POSIX (Linux, macOS)"| POSIX
+    MEM -->|"Win32"| WIN
+
+    subgraph POSIX ["Linux / macOS"]
+        P1["shm_open() + ftruncate()"]
+        P2["mmap(MAP_SHARED)"]
+        P3["shm_unlink()"]
+        P1 --> P2
+        P2 --> P3
+    end
+
+    subgraph WIN ["Windows"]
+        W1["CreateFileMappingA()"]
+        W2["MapViewOfFile()"]
+        W3["CloseHandle()"]
+        W1 --> W2
+        W2 --> W3
+        W1 -. "persist=true" .-> WF["File-backed\n%PROGRAMDATA%/shared_memory/"]
+    end
+```
 
 ## Limits and Frequently Asked Questions
 
