@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Makefile with `build`, `test`, `clean`, and `setup` targets wrapping CMake
 - Re-verified current macOS aarch64 (Apple Silicon) support on Sequoia 15.7.3
-- 6 new test cases: `Memory` accessors, `getWriteFlags` logic, `std::span` write overloads, segment overwrite, queue capacity=1 edge case, `maxMessageSize` boundary
+- New test case on `Memory` accessors, `getWriteFlags` logic, `std::span` write overloads, segment overwrite, queue capacity=1 edge case, `maxMessageSize` boundary and concurrent writing; also added docs to understand the tests better
 - `.vscode/c_cpp_properties.json` for C++20 IntelliSense on macOS (arm64/aarch64)
+- No-flake stability test: re-runs the full suite 1000 times as subprocesses to catch timing-dependent failures (cross-platform, skips itself via `LSM_NOFLAKE` env var)
+- Added `macos-latest` to GitHub Actions CI matrix with `LSM_NOFLAKE=1` to skip the 1000-iteration flake test in CI
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation

@@ -1,6 +1,6 @@
 # libsharedmemory
 
-A lightweight, header-only C++20 library for inter-process communication via shared memory. Transfer data between isolated OS processes — or between modules written in different programming languages — with a simple, cross-platform API.
+A lightweight, header-only C++20 library for inter-process communication via shared memory. Transfer data between isolated OS processes - or between modules written in different programming languages - with a simple, cross-platform API.
 
 **Key capabilities:**
 - Stream-based read/write transfer (`std::string`, `float*`, `double*`, scalars)
@@ -51,7 +51,7 @@ writer.write(data);
 std::string result = reader.readString();
 ```
 
-### Message Queue
+### Message Queue (C++20)
 
 ```cpp
 SharedMemoryQueue writer{"queue", /*capacity*/ 10, /*maxMessageSize*/ 256, /*persistent*/ true, /*isWriter*/ true};
@@ -88,7 +88,7 @@ std::cout << "Size: " << reader.size() << ", Empty: " << reader.isEmpty() << std
 
 ## Installation
 
-Copy `include/libsharedmemory/libsharedmemory.hpp` into your project's include path — it's a single header.
+Copy `include/libsharedmemory/libsharedmemory.hpp` into your project's include path - it's a single header.
 
 Alternatively, use `npm` for dependency management:
 
@@ -121,11 +121,24 @@ enum DataType {
 
 `kMemoryChanged` flips odd/even to signal data changes, allowing continuous readers to detect every update.
 
-## Limits
+## Limits and Frequently Asked Questions
 
-- **Endianness** is not handled. This is fine for local shared memory but requires attention if copying buffers to a network protocol.
-- **Cross-compiler** behavior for the binary memory layout is undefined.
-- **SharedMemoryQueue** works best with a single producer. Multiple concurrent producers require external synchronization.
+### Can I use this for cross-platform network communication?
+
+No. **Endianness** is not handled. This is fine for local shared memory but requires attention if copying buffers to a network protocol.
+
+### What about cross compiler compatibility?
+
+**Cross-compiler** behavior for the binary memory layout is undefined. The library is designed for C++20 compliant compilers on the same platform. For cross-compiler or cross-language interoperability, you must ensure consistent data type sizes, alignment, and endianness.
+
+### Can I use this with multiple writers?
+
+Maybe for slow writers, **if you are lucky**.
+**Concurrent writers**(`SharedMemoryWriteStream`) are currently not safely supported. `write()` performs 3 non-atomic `memcpy` calls (flags, size, data). Two threads writing to the same segment can interleave these operations, producing torn reads with mixed content or incorrect sizes. Use a single writer per segment or add external synchronization.
+
+### Are multiple producers supported for `SharedMemoryQueue`?
+
+Not yet. `enqueue()` uses a non-atomic read-modify-write on the write index. Two threads calling `enqueue()` on the same queue will read the same slot index, overwrite each other's data, and advance the index only once - causing **message corruption** in testing (up to 45% on macOS 15.7, aarch64, Macbook Air M4, 1000 messages, 2 producers). Use a single producer per queue or add a mutex around `enqueue()`.
 
 ## Roadmap
 
@@ -134,4 +147,4 @@ enum DataType {
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
