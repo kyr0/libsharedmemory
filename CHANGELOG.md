@@ -8,17 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.10.0] - 2026-03-11
 
 ### Added
-- Makefile with `build`, `test`, `clean`, and `setup` targets wrapping CMake
+- Makefile with `build`, `test`, `clean`, `examples` and `setup` targets wrapping CMake
 - Re-verified current macOS aarch64 (Apple Silicon) support on Sequoia 15.7.3
 - New test case on `Memory` accessors, `getWriteFlags` logic, `std::span` write overloads, segment overwrite, queue capacity=1 edge case, `maxMessageSize` boundary and concurrent writing; also added docs to understand the tests better
 - `.vscode/c_cpp_properties.json` for C++20 IntelliSense on macOS (arm64/aarch64)
 - No-flake stability test: re-runs the full suite 1000 times as subprocesses to catch timing-dependent failures (cross-platform, skips itself via `LSM_NOFLAKE` env var)
 - Added `macos-latest` to GitHub Actions CI matrix with `LSM_NOFLAKE=1` to skip the 1000-iteration flake test in CI
+- `example/` directory with three runnable examples: stream transfer (C++), message queue (C++), and raw shared memory (C via `lsm_c` wrapper)
+- `make examples` target to build and run all examples
+- Pure C wrapper (`lsm_c.h` / `lsm_c.cpp`) exposing `Memory` as opaque-handle C functions
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation
 - Added more detailed documentation for `SharedMemoryQueue` and Windows persistency features in README
 - Added Makefile to simplify setup, build and test processes for developers
+- README: added screenshot, pure C example with `lsm_c` wrapper
 
 ## [1.9.0] - 2026-02-13
 

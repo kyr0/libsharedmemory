@@ -2,6 +2,8 @@
 
 A lightweight, header-only C++20 library for inter-process communication via shared memory. Transfer data between isolated OS processes - or between modules written in different programming languages - with a simple, cross-platform API.
 
+![screenshot](screenshot.png)
+
 **Key capabilities:**
 - Stream-based read/write transfer (`std::string`, `float*`, `double*`, scalars)
 - FIFO message queue (`SharedMemoryQueue`) with atomic operations
@@ -21,8 +23,10 @@ A lightweight, header-only C++20 library for inter-process communication via sha
 Requires CMake 3.12+ and a C++20 compatible compiler.
 
 ```sh
+make setup    # Install cmake (auto-detects OS package manager)
 make build    # Configure and build (Release)
 make test     # Build and run all tests
+make examples # Build and run all examples (stream, queue, raw C)
 make clean    # Remove build artifacts
 ```
 
@@ -71,6 +75,37 @@ if (reader.peek(msg)) {
 }
 
 std::cout << "Size: " << reader.size() << ", Empty: " << reader.isEmpty() << std::endl;
+```
+
+### Raw Shared Memory (C)
+
+A thin C wrapper (`example/lsm_c.h`) exposes the `Memory` class as opaque-handle functions, so plain C code can create segments and read/write bytes directly:
+
+```c
+#include "lsm_c.h"
+#include <stdio.h>
+#include <string.h>
+
+int main(void)
+{
+    const char* message = "Hello from C!";
+
+    lsm_memory* writer = lsm_create("cExample", 256, /*persistent*/ 1);
+    memcpy(lsm_data(writer), message, strlen(message) + 1);
+
+    lsm_memory* reader = lsm_open("cExample", 256, /*persistent*/ 1);
+    printf("Received: %s\n", (const char*)lsm_data(reader));
+
+    lsm_close(reader); lsm_free(reader);
+    lsm_close(writer); lsm_destroy(writer); lsm_free(writer);
+    return 0;
+}
+```
+
+### Running the Examples
+
+```sh
+make examples   # Build and run all examples (stream, queue, raw C)
 ```
 
 ## Features

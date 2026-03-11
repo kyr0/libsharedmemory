@@ -1,4 +1,4 @@
-.PHONY: build test clean setup
+.PHONY: build test examples clean setup
 
 build:
 	cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -6,6 +6,11 @@ build:
 
 test: build
 	ctest --test-dir build --output-on-failure
+
+examples: build
+	@echo "--- stream ---"  && ./build/example/example_stream
+	@echo "--- queue ---"   && ./build/example/example_queue
+	@echo "--- raw (C) ---" && ./build/example/example_raw
 
 clean:
 	rm -rf build

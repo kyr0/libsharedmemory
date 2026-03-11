@@ -25,3 +25,8 @@ if(${LSM_BUILD_TEST} AND (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR))
     enable_testing()
     add_subdirectory(test/)
 endif()
+
+option(LSM_BUILD_EXAMPLES "build examples" ON)
+if(${LSM_BUILD_EXAMPLES} AND (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR))
+    add_subdirectory(example/)
+endif()
