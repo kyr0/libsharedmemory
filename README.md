@@ -38,6 +38,12 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+## Third-party integrations
+
+### OpenFrameworks (`ofxSharedMemory`)
+
+[@funatsufumiya](https://github.com/funatsufumiya) ported `libsharedmemory` to OpenFrameworks. Check out [ofxSharedMemory](https://github.com/funatsufumiya/ofxSharedMemory) if you're using OpenFrameworks!
+
 ## Examples
 
 ### Stream-based Transfer
