@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pure C wrapper (`lsm_c.h` / `lsm_c.cpp`) exposing `Memory` as opaque-handle C functions
 - Rust FFI bindings (`ffi/rust/`) with safe `SharedMemory` wrapper, unit tests, and runnable example
 - `ffi/rust/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
+- Zig FFI bindings (`ffi/zig/`) with idiomatic `SharedMemory` wrapper, unit tests, and runnable example (Zig 0.15+)
+- `ffi/zig/Makefile` with `setup`, `build`, `test`, `example`, and `clean` targets
 
 ### Changed
 - Improved README: added supported platforms table, building instructions, tightened examples and documentation

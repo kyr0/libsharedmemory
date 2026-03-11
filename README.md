@@ -130,11 +130,46 @@ make test       # Run unit tests
 make example    # Run the shared_memory example
 ```
 
+### Zig FFI (interop with C++)
+
+The `ffi/zig/` package uses Zig's `@cImport` to directly consume the C header and compiles the C++ wrapper as part of `zig build`. No external build step required.
+
+```zig
+const lsm = @import("lsm");
+const std = @import("std");
+
+pub fn main() !void {
+    const message = "Hello from Zig!";
+
+    // Writer: create a shared memory segment
+    const writer = try lsm.SharedMemory.create("zigExample", 256, true);
+    defer writer.deinit();
+
+    const wbuf = writer.data();
+    @memcpy(wbuf[0..message.len], message);
+
+    // Reader: open the same segment (could be a C++ process on the other end)
+    const reader = try lsm.SharedMemory.open("zigExample", 256, true);
+    defer reader.close();
+
+    std.debug.print("Received: {s}\n", .{reader.data()[0..message.len]});
+}
+```
+
+```sh
+cd ffi/zig
+make setup      # Install Zig (auto-detects OS package manager)
+make build      # Compile (includes C++ wrapper)
+make test       # Run unit tests
+make example    # Run the shared_memory example
+```
+
 ### Running the Examples
 
 ```sh
 make examples                # Build and run all examples (stream, queue, raw C)
 cd ffi/rust && make example  # Rust FFI example
+cd ffi/zig && make example   # Zig FFI example
 ```
 
 ## Features

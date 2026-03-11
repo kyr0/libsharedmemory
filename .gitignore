@@ -7,3 +7,7 @@ _codeql_detected_source_root
 
 # Rust
 target
+
+# Zig
+zig-out
+.zig-cache
