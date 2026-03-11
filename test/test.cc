@@ -886,9 +886,9 @@ const lest::test specification[] =
     },
 
     // Regression test for Issue #3 semantics: if writers publish again before
-    // readers acknowledge (markAsRead), the single change bit can toggle back
-    // to 0 and hide unread fresh data from hasNewData().
-    CASE("Regression: hasNewData can miss an unread update when writes outpace reader ack")
+    // readers acknowledge (markAsRead), hasNewData() must still report unread
+    // data (revision-based detection, not single-bit toggle behavior).
+    CASE("Regression: hasNewData stays true when writes outpace reader ack")
     {
         SharedMemoryWriteStream writer{"regressIssue3Pipe", 1024, true};
         SharedMemoryReadStream reader{"regressIssue3Pipe", 1024, true};
@@ -899,12 +899,13 @@ const lest::test specification[] =
         // Simulate lagging reader: writer publishes again before markAsRead().
         writer.write("v2");
 
-        // Current behavior: change bit toggles back to 0, so signal is missed
-        // even though latest unread data exists in the payload.
-        EXPECT(!reader.hasNewData());
+        // Fixed behavior: unread newer data is still signaled.
+        EXPECT(reader.hasNewData());
         EXPECT(reader.readString() == "v2");
+        reader.markAsRead();
+        EXPECT(!reader.hasNewData());
 
-        log_test_message("Issue #3 regression: signal can be missed while payload updates: REPRODUCED");
+        log_test_message("Issue #3 regression: unread update remains visible before ack: FIXED");
 
         writer.close();
         reader.close();
@@ -978,12 +979,10 @@ const lest::test specification[] =
         writer.destroy();
     },
 
-    // KNOWN LIMITATION TEST: Two threads write to the same stream segment
-    // concurrently. write() performs 3 non-atomic memcpy ops (flags, size, data),
-    // so interleaving can produce torn reads with mixed content or wrong sizes.
-    // This test reports corruption counts without asserting - the behavior is
-    // timing-dependent plus hard to trigger on Apple Silicon's strong memory model.
-    CASE("Concurrent stream writers cause data corruption (demonstrates known limitation)")
+    // Concurrency regression test: two threads write to the same stream segment.
+    // Stream writes are serialized and reader snapshots are consistency-checked,
+    // so corrupted reads should remain zero.
+    CASE("Concurrent stream writers remain coherent")
     {
         constexpr int iterations = 2000;
         std::atomic<int> corrupted{0};
@@ -1042,24 +1041,21 @@ const lest::test specification[] =
         msg << "Concurrent stream writers: content_corrupted=" << corrupted.load()
             << " size_corrupted=" << sizeCorrupted.load()
             << " out of " << (iterations * 2)
-            << " reads (demonstrates known limitation)";
+            << " reads";
         log_test_message(msg.str());
 
-        // We don't EXPECT corruption - it's timing dependent. We just report it.
-        // The point is: if corrupted > 0, the README warning is validated.
+        EXPECT(corrupted.load() == 0);
+        EXPECT(sizeCorrupted.load() == 0);
 
         reader.close();
         writer.close();
         writer.destroy();
     },
 
-    // KNOWN LIMITATION TEST: Two threads call enqueue() on the same queue.
-    // enqueue() does a non-atomic read of writeIndex, writes the message, then
-    // bumps the index. Both threads can read the same index, overwrite each
-    // other's slot, and the index advances only once - causing 22-45% message
-    // corruption in practice. Reports counts without asserting since behavior is
-    // timing-dependent.
-    CASE("Concurrent queue producers cause lost messages (demonstrates known limitation)")
+    // Concurrency regression test: two threads call enqueue() on the same queue.
+    // A shared producer lock serializes slot/index updates, so corruption should
+    // remain zero.
+    CASE("Concurrent queue producers remain coherent")
     {
         const std::string queueName = "concurrentProducers";
         constexpr std::uint32_t capacity = 2000;
@@ -1122,11 +1118,11 @@ const lest::test specification[] =
                << " dequeued=" << dequeued
                << " lost=" << lost
                << " content_corrupted=" << contentCorrupted
-               << " (demonstrates known limitation)";
+             << "";
         log_test_message(report.str());
 
-        // We don't assert on the exact count - it's timing dependent.
-        // If lost > 0 or contentCorrupted > 0, the README warning is validated.
+         EXPECT(lost == 0);
+         EXPECT(contentCorrupted == 0);
 
         writer1.close();
         reader.close();

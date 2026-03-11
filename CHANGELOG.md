@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-03-11
+
+### Added
+- Stream metadata now includes revision/ack tracking to prevent missed unread-update signaling when writers outpace reader acknowledgements
+- Stream writer serialization lock and reader snapshot consistency checks to avoid torn reads under concurrent writers
+- Queue producer serialization lock to prevent concurrent producer slot/index races
+- Regression test coverage for Issue #3 behavior and concurrent writer/producer coherence
+
+### Changed
+- Stream wire layout metadata changed from `|flags|size|data|` to an extended metadata header (flags + revision + ack + size + lock + data)
+- Queue metadata header expanded to include producer lock state
+
+### Fixed
+- `hasNewData()` no longer drops unread updates when multiple writes occur before `markAsRead()`
+- Concurrent stream writers no longer produce mixed/torn payload snapshots in stress tests
+- Concurrent queue producers no longer corrupt message prefixes or race write index updates in stress tests
+
+### Performance
+- Expected performance impact: slight to moderate throughput drop in write-heavy workloads due to writer/producer locking and reader snapshot retry checks
+- Typical impact is low for single-writer/single-producer use, and higher under heavy contention where correctness is now prioritized
+
+### Breaking Changes
+- This is a wire-layout breaking change for stream and queue metadata
+- Existing processes built against the old in-memory format must not interoperate with this new build until all participants are updated together
+
 ## [1.10.0] - 2026-03-11
 
 ### Added

@@ -2,12 +2,16 @@
 
 A lightweight, header-only C++20 library for inter-process communication via shared memory. Transfer data between isolated OS processes - or between modules written in different programming languages - with a simple, cross-platform API.
 
-![screenshot](screenshot.png)
+**Important:** v2.0.0 introduces a wire-layout breaking change for stream and queue metadata. Existing processes built against the old in-memory format must not interoperate with this new build until all participants are updated together.
+
+**v1.10.0 is the most stable v1 release and is recommended if you need strict compatibility with existing v1 participants.**
+
+<img src="https://github.com/kyr0/libsharedmemory/raw/master/screenshot.png" alt="Screenshot of libsharedmemory in action" width="300">
 
 **Key capabilities:**
 - Stream-based read/write transfer (`std::string`, `float*`, `double*`, scalars)
-- FIFO message queue (`SharedMemoryQueue`) with atomic operations
-- Optional persistence for shared memory segments
+    - FIFO message queue (`SharedMemoryQueue`) with atomic operations
+    - Optional persistence for shared memory segments
 - Change detection via flag bit flipping
 
 ## Supported Platforms

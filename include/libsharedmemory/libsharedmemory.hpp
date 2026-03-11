@@ -1,7 +1,7 @@
 #pragma once
 
-#define LIBSHAREDMEMORY_VERSION_MAJOR 1
-#define LIBSHAREDMEMORY_VERSION_MINOR 10
+#define LIBSHAREDMEMORY_VERSION_MAJOR 2
+#define LIBSHAREDMEMORY_VERSION_MINOR 0
 #define LIBSHAREDMEMORY_VERSION_PATCH 0
 
 #include <ostream>
@@ -62,6 +62,15 @@ inline constexpr std::size_t sizeOfOneFloat = 4; // float takes 4 bytes
 inline constexpr std::size_t sizeOfOneChar = 1; // char takes 1 byte
 inline constexpr std::size_t sizeOfOneDouble = 8; // double takes 8 bytes
 inline constexpr std::size_t flagSize = 1; // char takes 1 byte
+inline constexpr std::size_t flagPaddingSize = 3; // align following u32 metadata
+inline constexpr std::size_t revisionSize = 4; // 32-bit write revision counter
+inline constexpr std::size_t ackSize = 4; // 32-bit reader acknowledged revision
+inline constexpr std::size_t lockSize = 4; // 32-bit writer lock (0 unlocked, 1 locked)
+inline constexpr std::size_t revisionOffset = flagSize + flagPaddingSize;
+inline constexpr std::size_t ackOffset = revisionOffset + revisionSize;
+inline constexpr std::size_t sizeOffset = ackOffset + ackSize;
+inline constexpr std::size_t lockOffset = sizeOffset + bufferSizeSize;
+inline constexpr std::size_t dataOffset = lockOffset + lockSize;
 
 class Memory
 {
@@ -578,6 +587,8 @@ public:
         {
             throw std::runtime_error("Shared memory segment could not be opened.");
         }
+
+        _lastSeenRevision = readRevision();
     }
 
     [[nodiscard]] char readFlags() const noexcept
@@ -588,14 +599,14 @@ public:
 
     [[nodiscard]] bool hasNewData() const noexcept
     {
-        const char flags = readFlags();
-        return !!(flags & kMemoryChanged);
+        return readRevision() != _lastSeenRevision;
     }
 
     void markAsRead() const noexcept
     {
-        auto memory = static_cast<char*>(_memory.data());
-        memory[0] &= ~kMemoryChanged;
+        const std::uint32_t revision = readRevision();
+        writeAck(revision);
+        _lastSeenRevision = revision;
     }
 
     void close()
@@ -607,7 +618,7 @@ public:
     {
         const auto memory = static_cast<const char*>(_memory.data());
         std::uint32_t storedSize = 0;
-        std::memcpy(&storedSize, &memory[flagSize], bufferSizeSize);
+        std::memcpy(&storedSize, &memory[sizeOffset], bufferSizeSize);
         return static_cast<std::size_t>(storedSize);
     }
 
@@ -657,12 +668,10 @@ public:
     [[nodiscard]] std::string readString() const
     {
         const auto memory = static_cast<const char*>(_memory.data());
-
+        lockForRead();
         const std::size_t size = readSize(kMemoryTypeString);
-
-        // create a string that copies the data from memory
-        auto data = std::string(&memory[flagSize + bufferSizeSize], size);
-
+        auto data = std::string(&memory[dataOffset], size);
+        unlockRead();
         return data;
     }
 
@@ -671,16 +680,70 @@ private:
     [[nodiscard]] T* readNumericArray(const char typeFlag, const std::size_t elementSize) const
     {
         const auto memory = static_cast<const char*>(_memory.data());
+
+        lockForRead();
         const std::size_t byteSize = readSize(typeFlag);
         const std::size_t length = byteSize / elementSize;
-
-    auto data = new T[length]();
-        std::memcpy(data, &memory[flagSize + bufferSizeSize], byteSize);
-
+        auto data = new T[length]();
+        std::memcpy(data, &memory[dataOffset], byteSize);
+        unlockRead();
         return data;
     }
 
+    [[nodiscard]] bool isWriteLocked() const noexcept
+    {
+        return atomicUInt32(lockOffset).load(std::memory_order_acquire) != 0;
+    }
+
+    void lockForRead() const noexcept
+    {
+        std::uint32_t expected = 0;
+        while (!atomicUInt32(lockOffset).compare_exchange_weak(
+                   expected, 1, std::memory_order_acquire, std::memory_order_relaxed))
+        {
+            expected = 0;
+            std::this_thread::yield();
+        }
+    }
+
+    void unlockRead() const noexcept
+    {
+        atomicUInt32(lockOffset).store(0, std::memory_order_release);
+    }
+
+    [[nodiscard]] std::uint32_t readRevision() const noexcept
+    {
+        return atomicUInt32(revisionOffset).load(std::memory_order_acquire);
+    }
+
+    void writeAck(const std::uint32_t ack) const noexcept
+    {
+        atomicUInt32(ackOffset).store(ack, std::memory_order_release);
+    }
+
+    [[nodiscard]] std::atomic<std::uint32_t>& atomicUInt32(const std::size_t offset) const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[offset]);
+    }
+
+    [[nodiscard]] std::uint32_t readUInt32(std::size_t offset) const noexcept
+    {
+        const auto memory = static_cast<const char*>(_memory.data());
+        std::uint32_t value = 0;
+        std::memcpy(&value, &memory[offset], sizeof(std::uint32_t));
+        return value;
+    }
+
+    void writeUInt32(std::size_t offset, std::uint32_t value) const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        std::memcpy(&memory[offset], &value, sizeof(std::uint32_t));
+
+    }
+
     Memory _memory;
+    mutable std::uint32_t _lastSeenRevision = 0;
 };
 
 class SharedMemoryWriteStream
@@ -693,6 +756,13 @@ public:
         {
             throw std::runtime_error("Shared memory segment could not be created.");
         }
+
+        auto memory = static_cast<char*>(_memory.data());
+        memory[0] = 0;
+        writeUInt32(revisionOffset, 0);
+        writeUInt32(ackOffset, 0);
+        writeUInt32(sizeOffset, 0);
+        new (&memory[lockOffset]) std::atomic<std::uint32_t>(0);
     }
 
     void close()
@@ -702,9 +772,8 @@ public:
 
     [[nodiscard]] bool isMessageRead() const noexcept
     {
-        const auto memory = static_cast<const char*>(_memory.data());
-        const char flags = memory[0];
-        return !(flags & kMemoryChanged);
+        return atomicUInt32(ackOffset).load(std::memory_order_acquire)
+            == atomicUInt32(revisionOffset).load(std::memory_order_acquire);
     }
 
     void waitForRead() const noexcept
@@ -742,6 +811,8 @@ public:
             throw std::runtime_error("String payload exceeds maximum shared memory size.");
         }
 
+        lockForWrite(memory);
+
         // 1) copy change flag into buffer for change detection
         const char flags = getWriteFlags(kMemoryTypeString, memory[0]);
         std::memcpy(&memory[0], &flags, flagSize);
@@ -751,10 +822,13 @@ public:
         const auto bufferSize = static_cast<std::uint32_t>(string.size());
 
         // write data
-        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
+        std::memcpy(&memory[sizeOffset], &bufferSize, bufferSizeSize);
 
         // 3) copy stringData into memory buffer
-        std::memcpy(&memory[flagSize + bufferSizeSize], stringData, bufferSize);
+        std::memcpy(&memory[dataOffset], stringData, bufferSize);
+
+        incrementRevision(memory);
+        unlockForWrite(memory);
     }
 
     void write(std::span<const float> data) const
@@ -796,12 +870,60 @@ private:
 
         const auto memory = static_cast<char*>(_memory.data());
 
+        lockForWrite(memory);
+
         const char flags = getWriteFlags(typeFlag, memory[0]);
         std::memcpy(&memory[0], &flags, flagSize);
 
         const auto bufferSize = static_cast<std::uint32_t>(length * sizeof(T));
-        std::memcpy(&memory[flagSize], &bufferSize, bufferSizeSize);
-        std::memcpy(&memory[flagSize + bufferSizeSize], data.data(), bufferSize);
+        std::memcpy(&memory[sizeOffset], &bufferSize, bufferSizeSize);
+        std::memcpy(&memory[dataOffset], data.data(), bufferSize);
+
+        incrementRevision(memory);
+        unlockForWrite(memory);
+    }
+
+    static void lockForWrite(char* memory) noexcept
+    {
+        auto& lock = *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[lockOffset]);
+        std::uint32_t expected = 0;
+        while (!lock.compare_exchange_weak(expected, 1, std::memory_order_acquire, std::memory_order_relaxed))
+        {
+            expected = 0;
+            std::this_thread::yield();
+        }
+    }
+
+    static void unlockForWrite(char* memory) noexcept
+    {
+        auto& lock = *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[lockOffset]);
+        lock.store(0, std::memory_order_release);
+    }
+
+    static void incrementRevision(char* memory) noexcept
+    {
+        auto& revision = *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[revisionOffset]);
+        revision.fetch_add(1, std::memory_order_release);
+    }
+
+    [[nodiscard]] std::atomic<std::uint32_t>& atomicUInt32(const std::size_t offset) const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[offset]);
+    }
+
+    [[nodiscard]] std::uint32_t readUInt32(std::size_t offset) const noexcept
+    {
+        const auto memory = static_cast<const char*>(_memory.data());
+        std::uint32_t value = 0;
+        std::memcpy(&value, &memory[offset], sizeof(std::uint32_t));
+        return value;
+    }
+
+    void writeUInt32(std::size_t offset, std::uint32_t value) const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        std::memcpy(&memory[offset], &value, sizeof(std::uint32_t));
     }
 
     Memory _memory;
@@ -809,7 +931,7 @@ private:
 
 /**
  * @brief Queue structure for shared memory
- * Layout: [writeIndex(4)][readIndex(4)][capacity(4)][count(4)][maxMessageSize(4)][messages...]
+ * Layout: [writeIndex(4)][readIndex(4)][capacity(4)][count(4)][maxMessageSize(4)][producerLock(4)][messages...]
  */
 class SharedMemoryQueue
 {
@@ -819,7 +941,8 @@ private:
     static constexpr std::size_t kCapacityOffset = 8;
     static constexpr std::size_t kCountOffset = 12;
     static constexpr std::size_t kMaxMessageSizeOffset = 16;
-    static constexpr std::size_t kHeaderSize = 20;
+    static constexpr std::size_t kProducerLockOffset = 20;
+    static constexpr std::size_t kHeaderSize = 24;
 
     Memory _memory;
     std::uint32_t _capacity;
@@ -853,6 +976,28 @@ private:
         return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[kCountOffset]);
     }
 
+    [[nodiscard]] std::atomic<std::uint32_t>& atomicProducerLock() const noexcept
+    {
+        auto memory = static_cast<char*>(_memory.data());
+        return *reinterpret_cast<std::atomic<std::uint32_t>*>(&memory[kProducerLockOffset]);
+    }
+
+    void lockProducer() const noexcept
+    {
+        std::uint32_t expected = 0;
+        while (!atomicProducerLock().compare_exchange_weak(
+                   expected, 1, std::memory_order_acquire, std::memory_order_relaxed))
+        {
+            expected = 0;
+            std::this_thread::yield();
+        }
+    }
+
+    void unlockProducer() const noexcept
+    {
+        atomicProducerLock().store(0, std::memory_order_release);
+    }
+
 public:
     /**
      * @brief Create or open a shared memory queue
@@ -884,6 +1029,7 @@ public:
             auto memory = static_cast<char*>(_memory.data());
             new (&memory[kCountOffset]) std::atomic<std::uint32_t>(0);
             writeUInt32(kMaxMessageSizeOffset, maxMessageSize);
+            new (&memory[kProducerLockOffset]) std::atomic<std::uint32_t>(0);
         }
         else
         {
@@ -935,8 +1081,11 @@ public:
             throw std::runtime_error("Message exceeds maximum message size.");
         }
 
+        lockProducer();
+
         if (isFull())
         {
+            unlockProducer();
             return false;
         }
 
@@ -958,6 +1107,8 @@ public:
 
         // atomic increment of count
         atomicCount().fetch_add(1, std::memory_order_release);
+
+        unlockProducer();
 
         return true;
     }
