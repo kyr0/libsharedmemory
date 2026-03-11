@@ -11,19 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stream metadata now includes revision/ack tracking to prevent missed unread-update signaling when writers outpace reader acknowledgements
 - Stream writer serialization lock and reader snapshot consistency checks to avoid torn reads under concurrent writers
 - Queue producer serialization lock to prevent concurrent producer slot/index races
+- Queue consumer serialization lock to prevent concurrent consumer read-index races
 - Regression test coverage for Issue #3 behavior and concurrent writer/producer coherence
+- New `lsm_bench` contention benchmark executable and top-level `make bench` command
+- CI benchmark execution on `ubuntu-latest` matrix leg
 
 ### Changed
 - Stream wire layout metadata changed from `|flags|size|data|` to an extended metadata header (flags + revision + ack + size + lock + data)
-- Queue metadata header expanded to include producer lock state
+- Queue metadata header expanded to include producer and consumer lock state
 
 ### Fixed
 - `hasNewData()` no longer drops unread updates when multiple writes occur before `markAsRead()`
 - Concurrent stream writers no longer produce mixed/torn payload snapshots in stress tests
 - Concurrent queue producers no longer corrupt message prefixes or race write index updates in stress tests
+- Concurrent queue consumers no longer race read-index updates in stress tests
 
 ### Performance
-- Expected performance impact: slight to moderate throughput drop in write-heavy workloads due to writer/producer locking and reader snapshot retry checks
+- Expected performance impact: slight to moderate throughput drop in write-heavy workloads due to writer/producer/consumer lock serialization under contention
 - Typical impact is low for single-writer/single-producer use, and higher under heavy contention where correctness is now prioritized
 
 ### Breaking Changes

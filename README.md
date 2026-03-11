@@ -292,14 +292,14 @@ Binary layout: `|flags(1)|pad(3)|revision(4)|ack(4)|size(4)|lock(4)|data(...)|`
 
 ```c
 enum DataType {
-  kMemoryChanged = 1,   // flips odd/even per write
+  kMemoryChanged = 1,   // compatibility bit (legacy readers)
   kMemoryTypeString = 2,
   kMemoryTypeFloat = 4,
   kMemoryTypeDouble = 8,
 };
 ```
 
-`kMemoryChanged` flips odd/even to signal data changes, allowing continuous readers to detect every update.
+In v2.0.0, unread update detection is revision/ack-based; `kMemoryChanged` remains for compatibility.
 
 ### Queue (`SharedMemoryQueue`)
 
@@ -310,15 +310,17 @@ enum DataType {
 | `capacity` | `uint32` | 8 | Max number of messages |
 | `count` | `atomic<uint32>` | 12 | Current message count |
 | `maxMessageSize` | `uint32` | 16 | Max bytes per message |
-| `messages` | slot[] | 20+ | `capacity` × `[length(4)\|data(maxMessageSize)]` |
+| `producerLock` | `atomic<uint32>` | 20 | Shared producer-side lock |
+| `consumerLock` | `atomic<uint32>` | 24 | Shared consumer-side lock |
+| `messages` | slot[] | 28+ | `capacity` × `[length(4)\|data(maxMessageSize)]` |
 
 Binary layout: 
-`|header(20)|slot0|slot1|...|slotN|` where each slot is: 
+`|header(28)|slot0|slot1|...|slotN|` where each slot is: 
 `|length(4)|data(maxMessageSize)|`
 
 ## Architecture
 
-### Stream: Single Producer to Single Consumer
+### Stream: Contention-Safe Writer/Reader
 
 ```mermaid
 flowchart LR
@@ -327,7 +329,7 @@ flowchart LR
     end
 
     subgraph "OS Shared Memory"
-        SHM["Named Segment\n|flags|size|data|"]
+        SHM["Named Segment\n|flags|pad|revision|ack|size|lock|data|"]
     end
 
     subgraph "Process B (Reader)"
@@ -338,24 +340,28 @@ flowchart LR
     SHM -- "readString()" --> R
 ```
 
-### Queue: Single Producer to Consumer(s)
+### Queue: Multi-Producer / Multi-Consumer (Lock-Serialized)
 
 ```mermaid
 flowchart LR
-    subgraph "Process A (Producer)"
+    subgraph "Process A..N (Producers)"
         P[SharedMemoryQueue isWriter=true]
+        P2[SharedMemoryQueue isWriter=true]
     end
 
     subgraph "OS Shared Memory"
-        Q["Named Segment |header|slot0|slot1|...|slotN|"]
+        Q["Named Segment |header(28)|slot0|slot1|...|slotN|"]
     end
 
-    subgraph "Process B (Consumer)"
+    subgraph "Process B..N (Consumers)"
         C1[SharedMemoryQueue isWriter=false]
+        C2[SharedMemoryQueue isWriter=false]
     end
 
     P -- "enqueue()" --> Q
+    P2 -- "enqueue()" --> Q
     Q -- "dequeue()" --> C1
+    Q -- "dequeue()" --> C2
 ```
 
 ### FFI: Cross-Language Interop
