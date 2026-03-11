@@ -885,6 +885,32 @@ const lest::test specification[] =
         writer.destroy();
     },
 
+    // Regression test for Issue #3 semantics: if writers publish again before
+    // readers acknowledge (markAsRead), the single change bit can toggle back
+    // to 0 and hide unread fresh data from hasNewData().
+    CASE("Regression: hasNewData can miss an unread update when writes outpace reader ack")
+    {
+        SharedMemoryWriteStream writer{"regressIssue3Pipe", 1024, true};
+        SharedMemoryReadStream reader{"regressIssue3Pipe", 1024, true};
+
+        writer.write("v1");
+        EXPECT(reader.hasNewData());
+
+        // Simulate lagging reader: writer publishes again before markAsRead().
+        writer.write("v2");
+
+        // Current behavior: change bit toggles back to 0, so signal is missed
+        // even though latest unread data exists in the payload.
+        EXPECT(!reader.hasNewData());
+        EXPECT(reader.readString() == "v2");
+
+        log_test_message("Issue #3 regression: signal can be missed while payload updates: REPRODUCED");
+
+        writer.close();
+        reader.close();
+        writer.destroy();
+    },
+
     // Boundary test: a queue with capacity=1 is the smallest valid queue.
     // Verifies it can hold exactly one message, rejects a second, and can be
     // reused after draining - exercising the circular index wrap at offset 0→0.
