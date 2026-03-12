@@ -1144,6 +1144,31 @@ const lest::test specification[] =
         log_test_message("no-flake: running 1000 iterations (this will take a moment)...");
 
         std::string exe(g_argv0 ? g_argv0 : "./lsm_test");
+
+        // Validate exe path: only allow characters that are safe in a shell
+        // double-quoted string to prevent command injection via argv[0].
+        auto isPathSafe = [](char c) {
+            return std::isalnum(static_cast<unsigned char>(c)) ||
+                   c == '/' || c == '.' || c == '-' || c == '_';
+        };
+        if (!std::all_of(exe.begin(), exe.end(), isPathSafe)) {
+            log_test_message("no-flake: SKIPPED (executable path contains unsafe characters)");
+            return;
+        }
+
+        // Verify the basename is exactly the expected test binary so an
+        // attacker cannot substitute a different executable via argv[0].
+        const std::string stem = exe.substr(exe.find_last_of("/\\") + 1);
+#ifdef _WIN32
+        const bool knownBinary = (stem == "lsm_test.exe" || stem == "lsm_test");
+#else
+        const bool knownBinary = (stem == "lsm_test");
+#endif
+        if (!knownBinary) {
+            log_test_message("no-flake: SKIPPED (unexpected executable name: " + stem + ")");
+            return;
+        }
+
 #ifdef _WIN32
         std::string cmd = "set LSM_NOFLAKE=1 && \"" + exe + "\" > NUL 2>&1";
 #else
